@@ -4,11 +4,13 @@ import sqlite3
 from telebot import types
 import time
 import cherrypy
+import os
 
 TOKEN = 'TGBOT_TOKEN_HERE'
 
-__version__ = '0.4.3.0 Beta'
-__chng__ = """
+__version__ = '0.4.4.0 Beta'
+
+"""
 2.0.0:
 Команды теперь не через слеш и на русском!
 Усовершенствованы системы хранения и обраотки данных
@@ -72,10 +74,18 @@ WebHook!!!
 Теперь отображается ваша потенциальная сумма денег (с учетом долгов)
 4.2.2:
 Добавлены расходы и доходы по категориям при показе общих расходов
+
 4.3.0:
 При добавлении нового счета можно указать стартовый баланс
 Добавлена возможность редактирования расходов и доходов, а также возможность перенести перенести расходы и доходы из одной категории в другую
 Мелкие исправления
+"""
+
+__chng__ = """
+4.4.0:
+Достаточно крупное обновление (с програмной стороны)
+Усовершенствована система хранения и обрботки данных (скоро появится резервное копирование данных для большей безопасности)
+Увеличение скорости доступа к файлам
 """
 
 """
@@ -114,7 +124,7 @@ vr1 = dict() #^2
 vr2 = dict()
 vr3 = dict()
 vr4 = dict()
-spend = dict() #счет в расходах
+spend = dict() #счет в расходах и доходах
 tme = dict() #время для записи расходов
 month = {'Jan':1,'Feb':2,'Mar':3,'Apr':4,'May':5,'Jun':6,'Jul':7,'Aug':8,'Sep':9,'Oct':10,'Nov':11,'Dec':12}
 mdays = {1:31,2:28,3:31,4:30,5:31,6:30,7:31,8:31,9:30,10:31,11:30,12:31}
@@ -193,17 +203,18 @@ class WebhookServer(object):
 
 #WEBHOOK_FINISH
 
-def loadlogins():
+def loadlogins():#загрузка логинов всех пользователей
     conn = sqlite3.connect(db)
     cur = conn.cursor()
     global logins
+    logins = []
     cur.execute('SELECT * FROM users')
     for row in cur:
-        logins.append(row[1])
+        logins.append(row[0])
     cur.close()
     conn.close()
 
-def loadkods():
+def loadkods():#загрузка логинов уже залогинившихся пользоваьелей
     conn = sqlite3.connect(db)
     cur = conn.cursor()
     global logins
@@ -213,7 +224,7 @@ def loadkods():
     cur.close()
     conn.close()
 
-def del_kod(kd):
+def del_kod(kd):#удаление пользователя из списка залогинившихся
     conn = sqlite3.connect(db)
     cur = conn.cursor()
     cur.execute("DELETE FROM zalog WHERE id = '%d'"%(kd))
@@ -221,7 +232,7 @@ def del_kod(kd):
     cur.close()
     conn.close()
 
-def check_num(a):
+def check_num(a):#проверка числа
     a = a.replace(',','.')
     try:
         a = float(a)
@@ -234,7 +245,7 @@ def check_num(a):
         return 'NO'
     return k
 
-def nums():
+def nums():#рандобное число
     a = time.asctime()
     a = a.split()
     a = a[3]
@@ -242,20 +253,20 @@ def nums():
     a = int(a[0])*60*60 + int(a[1])*60 + int(a[2])
     return a
 
-def tday():
+def tday():#дата сегодня в виде массива
     a = time.asctime()
     a = a.split()
     b = [int(a[2]),month[a[1]],int(a[4])]
     return b
 
-def stday():
+def stday():#дата сегодня в виде строки
     a = str(tday())
     a = a.replace('[','')
     a = a.replace(']','')
     a = a.replace(', ','.')
     return a
 
-def lday():
+def lday():#дата вчера в виде массива
     a = time.asctime()
     a = a.split()
     b = [int(a[2]),month[a[1]],int(a[4])]
@@ -273,7 +284,7 @@ def lday():
         b[0] = mdays[b[1]] + v
     return b
 
-def lmon():
+def lmon():#прошлый месяц
     a = time.asctime()
     a = a.split()
     b = [month[a[1]],int(a[4])]
@@ -282,6 +293,9 @@ def lmon():
         b[1] -= 1
         b[0] = 12
     return b
+
+def user_db(dat):#база данных для определенного пользователя
+    return '/root/debt/users/' + dat + '/data.db'
 
 loadlogins()
 loadkods()
@@ -311,6 +325,7 @@ def errors2(message):
         users[mid] = 'main_errors'
         bot.register_next_step_handler(sent, errors3)
     elif text == code and ERROR == 0:
+        bot.send_message(mid, users[mid])
         markup1 = types.ReplyKeyboardMarkup()
         markup1.row('ДА')
         markup1.row('НЕТ')
@@ -351,7 +366,10 @@ def start(message):
         users[mid] = 'main'
         bot.send_message(mid , __desc__ + '\nВерсия бота: ' + str(__version__) + '\n\nСписок изменений:' + __chng__, reply_markup = MUP[users[mid]])
     else:
-        bot.send_message(mid , __desc__ + '\nВерсия бота: ' + str(__version__) + '\n\nСписок изменений:' + __chng__)
+        if users[mid] in MUP:
+            bot.send_message(mid , __desc__ + '\nВерсия бота: ' + str(__version__) + '\n\nСписок изменений:' + __chng__, reply_markup = MUP[users[mid]])
+        else:
+            bot.send_message(mid , __desc__ + '\nВерсия бота: ' + str(__version__) + '\n\nСписок изменений:' + __chng__)
 
 @bot.message_handler(content_types=['text'])
 def main(message):
@@ -361,7 +379,10 @@ def main(message):
     if ERROR != 0:
         bot.send_message(mid, 'Проводятся технические работы')
         return
-    if((users.get(mid) == None) or (users[mid] == 'main')):
+    if users.get(mid) == None:
+        users[mid] = 'main'
+    #print("<<" + str(users[mid]) + ">>")
+    if users[mid] == 'main':
         users[mid] = 'main'
         if text == 'РЕГИСТРАЦИЯ':
             if kods.get(mid) == None:
@@ -418,7 +439,7 @@ def main(message):
             vr[mid] = []
             markup1 = types.ReplyKeyboardMarkup()
             markup1.row('ОТМЕНА')
-            conn = sqlite3.connect(db)
+            conn = sqlite3.connect(user_db(kods[mid]))
             cur = conn.cursor()
             cur.execute("SELECT name FROM bank WHERE login = '%s'"%(kods[mid]))
             for row in cur:
@@ -436,7 +457,7 @@ def main(message):
         elif text == 'РЕДАКТИРОВАТЬ':
             markup1 = types.ReplyKeyboardMarkup()
             markup1.row('ОТМЕНА')
-            conn = sqlite3.connect(db)
+            conn = sqlite3.connect(user_db(kods[mid]))
             cur = conn.cursor()
             cur.execute("SELECT cred FROM credits WHERE login = '%s'"%(kods[mid]))
             for row in cur:
@@ -454,7 +475,7 @@ def main(message):
             stroka += 'Ваши группы:\n'
             markupGR = types.ReplyKeyboardMarkup()
             markupGR.row('Добавить группу')
-            conn = sqlite3.connect(db)
+            conn = sqlite3.connect(user_db(kods[mid]))
             cur = conn.cursor()
             i = 1
             cur.execute("SELECT name, kol FROM groups WHERE login = '%s'"%(kods[mid]))
@@ -488,7 +509,7 @@ def main(message):
             kol = 0
             markup1 = types.ReplyKeyboardMarkup()
             markup1.row('ОТМЕНА')
-            conn = sqlite3.connect(db)
+            conn = sqlite3.connect(user_db(kods[mid]))
             cur = conn.cursor()
             cur.execute("SELECT name, bal FROM bank WHERE login = '%s'"%(kods[mid]))
             for row in cur:
@@ -505,7 +526,7 @@ def main(message):
             kol = 0
             markup1 = types.ReplyKeyboardMarkup()
             markup1.row('ОТМЕНА')
-            conn = sqlite3.connect(db)
+            conn = sqlite3.connect(user_db(kods[mid]))
             cur = conn.cursor()
             cur.execute("SELECT name, bal FROM bank WHERE login = '%s'"%(kods[mid]))
             for row in cur:
@@ -525,7 +546,7 @@ def main(message):
             kol = 0
             markup1 = types.ReplyKeyboardMarkup()
             markup1.row('ОТМЕНА')
-            conn = sqlite3.connect(db)
+            conn = sqlite3.connect(user_db(kods[mid]))
             cur = conn.cursor()
             cur.execute("SELECT name, bal FROM bank WHERE login = '%s'"%(kods[mid]))
             for row in cur:
@@ -544,7 +565,7 @@ def main(message):
             kol = 0
             markup1 = types.ReplyKeyboardMarkup()
             markup1.row('ОТМЕНА')
-            conn = sqlite3.connect(db)
+            conn = sqlite3.connect(user_db(kods[mid]))
             cur = conn.cursor()
             vr[mid] = []
             vr1[mid] = []
@@ -584,7 +605,7 @@ def main(message):
             markup1 = types.ReplyKeyboardMarkup()
             markup1.row('ОТМЕНА')
             vr[mid] = []
-            conn = sqlite3.connect(db)
+            conn = sqlite3.connect(user_db(kods[mid]))
             cur = conn.cursor()
             cur.execute("SELECT cat FROM cats WHERE login = '%s'"%(kods[mid]))
             for row in cur:
@@ -605,7 +626,7 @@ def main(message):
             markup1 = types.ReplyKeyboardMarkup()
             markup1.row('ВСЕ')
             vr[mid] = []
-            conn = sqlite3.connect(db)
+            conn = sqlite3.connect(user_db(kods[mid]))
             cur = conn.cursor()
             cur.execute("SELECT cat FROM cats WHERE login = '%s'"%(kods[mid]))
             for row in cur:
@@ -620,7 +641,7 @@ def main(message):
             users[mid] = 'main_bank_spend_change'
             markup1 = types.ReplyKeyboardMarkup()
             markup1.row('ВСЕ')
-            conn = sqlite3.connect(db)
+            conn = sqlite3.connect(user_db(kods[mid]))
             cur = conn.cursor()
             cur.execute("SELECT name FROM bank WHERE login = '%s'"%(kods[mid]))
             vr[mid] = []
@@ -644,7 +665,7 @@ def main(message):
             markup1 = types.ReplyKeyboardMarkup()
             markup1.row('ОТМЕНА')
             vr[mid] = []
-            conn = sqlite3.connect(db)
+            conn = sqlite3.connect(user_db(kods[mid]))
             cur = conn.cursor()
             cur.execute("SELECT cat FROM cats WHERE login = '%s'"%(kods[mid]))
             for row in cur:
@@ -676,7 +697,7 @@ def main(message):
             markup1 = types.ReplyKeyboardMarkup()
             markup1.row('ОТМЕНА')
             vr[mid] = []
-            conn = sqlite3.connect(db)
+            conn = sqlite3.connect(user_db(kods[mid]))
             cur = conn.cursor()
             cur.execute("SELECT cat FROM cats WHERE login = '%s'"%(kods[mid]))
             for row in cur:
@@ -709,7 +730,7 @@ def main(message):
             markup1 = types.ReplyKeyboardMarkup()
             markup1.row('ОТМЕНА')
             vr[mid] = []
-            conn = sqlite3.connect(db)
+            conn = sqlite3.connect(user_db(kods[mid]))
             cur = conn.cursor()
             cur.execute("SELECT cat FROM fcats WHERE login = '%s'"%(kods[mid]))
             for row in cur:
@@ -730,7 +751,7 @@ def main(message):
             markup1 = types.ReplyKeyboardMarkup()
             markup1.row('ВСЕ')
             vr[mid] = []
-            conn = sqlite3.connect(db)
+            conn = sqlite3.connect(user_db(kods[mid]))
             cur = conn.cursor()
             cur.execute("SELECT cat FROM fcats WHERE login = '%s'"%(kods[mid]))
             for row in cur:
@@ -745,7 +766,7 @@ def main(message):
             users[mid] = 'main_bank_fin_change'
             markup1 = types.ReplyKeyboardMarkup()
             markup1.row('ВСЕ')
-            conn = sqlite3.connect(db)
+            conn = sqlite3.connect(user_db(kods[mid]))
             cur = conn.cursor()
             cur.execute("SELECT name FROM bank WHERE login = '%s'"%(kods[mid]))
             vr[mid] = []
@@ -769,7 +790,7 @@ def main(message):
             markup1 = types.ReplyKeyboardMarkup()
             markup1.row('ОТМЕНА')
             vr[mid] = []
-            conn = sqlite3.connect(db)
+            conn = sqlite3.connect(user_db(kods[mid]))
             cur = conn.cursor()
             cur.execute("SELECT cat FROM fcats WHERE login = '%s'"%(kods[mid]))
             for row in cur:
@@ -801,7 +822,7 @@ def main(message):
             markup1 = types.ReplyKeyboardMarkup()
             markup1.row('ОТМЕНА')
             vr[mid] = []
-            conn = sqlite3.connect(db)
+            conn = sqlite3.connect(user_db(kods[mid]))
             cur = conn.cursor()
             cur.execute("SELECT cat FROM fcats WHERE login = '%s'"%(kods[mid]))
             for row in cur:
@@ -846,6 +867,9 @@ def reg1(message):
             return
         else:
             log = text.lower()
+            if len(log) > 32:
+                bot.send_message(mid, 'Некорректный ввод. Слишком много символов')
+                return
             if log not in logins:
                 for i in range(len(log)):
                     if ((log[i]<'a' or log[i]>'z') and (log[i]<'0' or log[i]>'9')):
@@ -857,8 +881,12 @@ def reg1(message):
                 bot.register_next_step_handler(sent, reg2)
                 return
             else:
-                bot.send_message(mid, 'Пользователь с таким именем уже существует')   
+                bot.send_message(mid, 'Пользователь с таким именем уже существует')
+                return
     log = log.lower()
+    if len(log) > 32:
+        bot.send_message(mid, 'Некорректный ввод. Слишком много символов')
+        return
     if log not in logins:
         for i in range(len(log)):
             if ((log[i]<'a' or log[i]>'z') and (log[i]<'0' or log[i]>'9')):
@@ -874,6 +902,21 @@ def reg1(message):
         conn.commit()
         cur.close()
         conn.close()
+
+        os.chdir('/root/debt/users/')
+        os.mkdir(log)
+        conn = sqlite3.connect(user_db(log))
+        cur = conn.cursor()
+        cur.execute("CREATE TABLE bank (login TEXT, name TEXT, bal REAL)")
+        cur.execute("CREATE TABLE cats (login TEXT, cat TEXT)")
+        cur.execute("CREATE TABLE credits (login TEXT, cred TEXT, time TEXT, sz	REAL)")
+        cur.execute("CREATE TABLE fcats (login TEXT, cat TEXT)")
+        cur.execute("CREATE TABLE groups (login TEXT, name TEXT, kol INTEGER, pep TEXT)")
+        cur.execute("CREATE TABLE inc (login TEXT, year INTEGER, month INTEGER, day INTEGER, cat TEXT, bank TEXT, name TEXT, sum REAL)")
+        cur.execute("CREATE TABLE spend (login TEXT, year INTEGER, month INTEGER, day INTEGER, cat TEXT, bank TEXT, name TEXT, sum REAL)")
+        cur.close()
+        conn.close()
+        
         logins.append(log)
         bot.send_message(mid, 'Регистрация успешно пройдена!')
     else:
@@ -895,6 +938,21 @@ def reg2(message):
     conn.commit()
     cur.close()
     conn.close()
+
+    os.chdir('/root/debt/users/')
+    os.mkdir(log)
+    conn = sqlite3.connect(user_db(log))
+    cur = conn.cursor()
+    cur.execute("CREATE TABLE bank (login TEXT, name TEXT, bal REAL)")
+    cur.execute("CREATE TABLE cats (login TEXT, cat TEXT)")
+    cur.execute("CREATE TABLE credits (login TEXT, cred TEXT, time TEXT, sz	REAL)")
+    cur.execute("CREATE TABLE fcats (login TEXT, cat TEXT)")
+    cur.execute("CREATE TABLE groups (login TEXT, name TEXT, kol INTEGER, pep TEXT)")
+    cur.execute("CREATE TABLE inc (login TEXT, year INTEGER, month INTEGER, day INTEGER, cat TEXT, bank TEXT, name TEXT, sum REAL)")
+    cur.execute("CREATE TABLE spend (login TEXT, year INTEGER, month INTEGER, day INTEGER, cat TEXT, bank TEXT, name TEXT, sum REAL)")
+    cur.close()
+    conn.close()
+    
     logins.append(log)
     bot.send_message(mid, 'Регистрация успешно пройдена!')
 
@@ -1031,7 +1089,7 @@ def addcredit2(message):
         except Exception:
             bot.send_message(mid, 'Некорректный ввод', reply_markup = MUP[users[mid]])
             return
-        conn = sqlite3.connect(db)
+        conn = sqlite3.connect(user_db(kods[mid]))
         cur = conn.cursor()
         cur.execute("SELECT cred, sz FROM credits WHERE login = '%s'"%(kods[mid]))
         for row in cur:
@@ -1075,7 +1133,7 @@ def edit1(message):#редактирование долгов
     vr1[mid] = []
     markup1 = types.ReplyKeyboardMarkup()
     markup1.row('ОТМЕНА')
-    conn = sqlite3.connect(db)
+    conn = sqlite3.connect(user_db(kods[mid]))
     cur = conn.cursor()
     cur.execute("SELECT name FROM bank WHERE login = '%s'"%(kods[mid]))
     for row in cur:
@@ -1101,7 +1159,7 @@ def edit2(message):
     vr1[mid] = text
     markup1 = types.ReplyKeyboardMarkup()
     markup1.row('ОТМЕНА')
-    conn = sqlite3.connect(db)
+    conn = sqlite3.connect(user_db(kods[mid]))
     cur = conn.cursor()
     cur.execute("SELECT sz FROM credits WHERE cred = '%s' AND login = '%s'"%(vr[mid],kods[mid]))
     for row in cur:
@@ -1125,7 +1183,7 @@ def edit3(message):
         except Exception:
             bot.send_message(mid, 'Некорректный ввод', reply_markup = MUP[users[mid]])
             return
-        conn = sqlite3.connect(db)
+        conn = sqlite3.connect(user_db(kods[mid]))
         cur = conn.cursor()
         cur.execute("SELECT cred, sz FROM credits WHERE login = '%s'"%(kods[mid]))
         kdk = 0
@@ -1147,7 +1205,7 @@ def edit3(message):
             if kdk == 2:
                 fam = im
             zn = zn + text
-            conn = sqlite3.connect(db)
+            conn = sqlite3.connect(user_db(kods[mid]))
             cur = conn.cursor()
             if text > 0:
                 cur.execute("SELECT bal FROM bank WHERE login = '%s' AND name = '%s'"%(kods[mid],vr1[mid]))
@@ -1187,7 +1245,7 @@ def group1(message):
             bot.register_next_step_handler(sent, group2)
         else:
             stroka = 'Такой группы нет'
-            conn = sqlite3.connect(db)
+            conn = sqlite3.connect(user_db(kods[mid]))
             cur = conn.cursor()
             cur.execute("SELECT name,kol,pep FROM groups WHERE login = '%s'"%(kods[mid]))
             for row in cur:
@@ -1212,7 +1270,7 @@ def group2(message):
     text1 = text.upper()
     users[mid] = prev_step(users[mid])
     if text != 'ОТМЕНА':
-        conn = sqlite3.connect(db)
+        conn = sqlite3.connect(user_db(kods[mid]))
         cur = conn.cursor()
         cur.execute("SELECT name FROM groups WHERE login = '%s'"%(kods[mid]))
         for row in cur:
@@ -1247,7 +1305,7 @@ def group3(message):
                 bot.send_message(mid, 'Некорректный ввод', reply_markup = MUP[users[mid]])
                 vr.pop(mid)
                 return
-        conn = sqlite3.connect(db)
+        conn = sqlite3.connect(user_db(kods[mid]))
         cur = conn.cursor()
         cur.execute("INSERT INTO groups (login,name,kol,pep) VALUES ('%s','%s','%d','%s')"%(kods[mid],vr[mid],i,text))
         conn.commit()
@@ -1294,7 +1352,7 @@ def group5(message):
             return
         pep1 = []
         pep2 = []
-        conn = sqlite3.connect(db)
+        conn = sqlite3.connect(user_db(kods[mid]))
         cur = conn.cursor()
         cur.execute("SELECT pep FROM groups WHERE login = '%s' AND name = '%s'"%(kods[mid],vr[mid]))
         vr.pop(mid)
@@ -1347,7 +1405,7 @@ def group6(message):
             vr.pop(mid)
             return
         pep2 = []
-        conn = sqlite3.connect(db)
+        conn = sqlite3.connect(user_db(kods[mid]))
         cur = conn.cursor()
         cur.execute("SELECT pep FROM groups WHERE login = '%s' AND name = '%s'"%(kods[mid],vr[mid]))
         vr.pop(mid)
@@ -1380,7 +1438,7 @@ def watch_debts(message):#просмотр должников
     osum = 0
     stroka = ""
     stroka += 'Ваши должники:\n'
-    conn = sqlite3.connect(db)
+    conn = sqlite3.connect(user_db(kods[mid]))
     cur = conn.cursor()
     cur.execute("SELECT cred, sz, time FROM credits WHERE login = '%s'"%(kods[mid]))
     for row in cur:
@@ -1401,7 +1459,7 @@ def watch_bank(message):
     sdebt = 0
     stroka = ""
     stroka += 'Ваши счета:\n'
-    conn = sqlite3.connect(db)
+    conn = sqlite3.connect(user_db(kods[mid]))
     cur = conn.cursor()
     cur.execute("SELECT name, bal FROM bank WHERE login = '%s'"%(kods[mid]))
     for row in cur:
@@ -1439,7 +1497,7 @@ def bank_add1(message):
     if len(text) > 32:
         bot.send_message(mid, 'Слишком длинное название', reply_markup = MUP[users[mid]])
         return
-    conn = sqlite3.connect(db)
+    conn = sqlite3.connect(user_db(kods[mid]))
     cur = conn.cursor()
     cur.execute("SELECT name FROM bank WHERE login = '%s'"%(kods[mid]))
     for row in cur:
@@ -1473,7 +1531,7 @@ def bank_add2(message):
     except Exception:
         bot.send_message(mid, 'Неверный формат ввода', reply_markup = MUP[users[mid]])
         return
-    conn = sqlite3.connect(db)
+    conn = sqlite3.connect(user_db(kods[mid]))
     cur = conn.cursor()
     cur.execute("INSERT INTO bank (login,name,bal) VALUES ('%s','%s',%f)"%(kods[mid],vr[mid],text))
     conn.commit()
@@ -1488,7 +1546,7 @@ def bank_del(message):
     if text == 'ОТМЕНА':
         bot.send_message(mid, 'Выберите действие', reply_markup = MUP[users[mid]])
         return
-    conn = sqlite3.connect(db)
+    conn = sqlite3.connect(user_db(kods[mid]))
     cur = conn.cursor()
     cur.execute("SELECT bal FROM bank WHERE name = '%s' AND login = '%s'"%(text,kods[mid]))
     kod = 1
@@ -1531,7 +1589,7 @@ def watch_cat(mid):
     kol = 0
     stroka = ""
     stroka += 'Ваши категории:\n'
-    conn = sqlite3.connect(db)
+    conn = sqlite3.connect(user_db(kods[mid]))
     cur = conn.cursor()
     cur.execute("SELECT cat FROM cats WHERE login = '%s'"%(kods[mid]))
     for row in cur:
@@ -1554,7 +1612,7 @@ def bank_spend_cat_add(message):
     if text.upper() == 'ВСЕ':
         bot.send_message(mid, "Данное имя выбрать невозможно", reply_markup = MUP[users[mid]])
         return
-    conn = sqlite3.connect(db)
+    conn = sqlite3.connect(user_db(kods[mid]))
     cur = conn.cursor()
     cur.execute("SELECT cat FROM cats WHERE login = '%s'"%(kods[mid]))
     for row in cur:
@@ -1579,7 +1637,7 @@ def bank_spend_cat_del(message):
     if text.upper() not in vr[mid]:
         bot.send_message(mid, "Такой категории нет", reply_markup = MUP[users[mid]])
         return
-    conn = sqlite3.connect(db)
+    conn = sqlite3.connect(user_db(kods[mid]))
     cur = conn.cursor()
     cur.execute("SELECT cat FROM spend WHERE login = '%s'"%(kods[mid]))
     for row in cur:
@@ -1698,7 +1756,7 @@ def bank_spend_his2(message):
         vr.pop(mid)
         return
 
-    conn = sqlite3.connect(db)
+    conn = sqlite3.connect(user_db(kods[mid]))
     cur = conn.cursor()
     stroka = "Ваши расходы с " + str(sday) + "." + str(smon) + "." + str(syear) + ' по ' + str(fday) + "." + str(fmon) + "." + str(fyear) + "\n"
     if spend[mid] != 'ВСЕ':
@@ -1849,7 +1907,7 @@ def bank_spend_add3(message):
             vr.pop(mid)
             return
         text += '%' + str(nums())
-    conn = sqlite3.connect(db)
+    conn = sqlite3.connect(user_db(kods[mid]))
     cur = conn.cursor()
     cur.execute("SELECT bal FROM bank WHERE login = '%s' AND name = '%s'"%(kods[mid],spend[mid]))
     for row in cur:
@@ -1918,7 +1976,7 @@ def bank_spend_edit2(message): #дата
         bot.send_message(mid, "Неверный формат ввода", reply_markup = MUP[users[mid]])
         vr.pop(mid)
         return
-    conn = sqlite3.connect(db)
+    conn = sqlite3.connect(user_db(kods[mid]))
     cur = conn.cursor()
     stroka = "Ваши расходы по данным параметрам\n\n"
     kol = 0
@@ -1958,7 +2016,7 @@ def bank_spend_edit3(message):
     txt = vr1[mid][text]
     vr2[mid] = txt
     txt = txt.split('%')
-    conn = sqlite3.connect(db)
+    conn = sqlite3.connect(user_db(kods[mid]))
     cur = conn.cursor()
     cur.execute("SELECT sum FROM spend WHERE login = '%s' AND year = '%d' AND month = '%d' AND day = '%d' AND bank = '%s' AND cat = '%s' AND name = '%s'"%(kods[mid],tme[mid][2],tme[mid][1],tme[mid][0],spend[mid],vr[mid],vr2[mid]))
     for row in cur:
@@ -1990,7 +2048,7 @@ def bank_spend_edit4(message):
     if text not in vr1[mid]:
         bot.send_message(mid, "У вас нет такой категории", reply_markup = MUP[users[mid]])
         return
-    conn = sqlite3.connect(db)
+    conn = sqlite3.connect(user_db(kods[mid]))
     cur = conn.cursor()
     cur.execute("UPDATE spend SET cat = '%s' WHERE login = '%s' AND year = '%d' AND month = '%d' AND day = '%d' AND bank = '%s' AND name = '%s'"%(text,kods[mid],tme[mid][2],tme[mid][1],tme[mid][0],spend[mid],vr2[mid]))
     conn.commit()
@@ -2014,7 +2072,7 @@ def bank_spend_edit5(message):
     except Exception:
         bot.send_message(mid, "Неверный формат", reply_markup = MUP[users[mid]])
         return
-    conn = sqlite3.connect(db)
+    conn = sqlite3.connect(user_db(kods[mid]))
     cur = conn.cursor()
     cur.execute("SELECT bal FROM bank WHERE login = '%s' AND name = '%s'"%(kods[mid],spend[mid]))
     for row in cur:
@@ -2048,7 +2106,7 @@ def watch_fcat(mid):
     kol = 0
     stroka = ""
     stroka += 'Ваши категории:\n'
-    conn = sqlite3.connect(db)
+    conn = sqlite3.connect(user_db(kods[mid]))
     cur = conn.cursor()
     cur.execute("SELECT cat FROM fcats WHERE login = '%s'"%(kods[mid]))
     for row in cur:
@@ -2070,7 +2128,7 @@ def bank_fin_cat_add(message):
     if text.upper() == 'ВСЕ':
         bot.send_message(mid, "Данное имя выбрать невозможно", reply_markup = MUP[users[mid]])
         return
-    conn = sqlite3.connect(db)
+    conn = sqlite3.connect(user_db(kods[mid]))
     cur = conn.cursor()
     cur.execute("SELECT cat FROM fcats WHERE login = '%s'"%(kods[mid]))
     for row in cur:
@@ -2095,7 +2153,7 @@ def bank_fin_cat_del(message):
     if text.upper() not in vr[mid]:
         bot.send_message(mid, "Такой категории нет", reply_markup = MUP[users[mid]])
         return
-    conn = sqlite3.connect(db)
+    conn = sqlite3.connect(user_db(kods[mid]))
     cur = conn.cursor()
     cur.execute("SELECT cat FROM inc WHERE login = '%s'"%(kods[mid]))
     for row in cur:
@@ -2191,7 +2249,7 @@ def bank_fin_add3(message): #описание + доход
             vr.pop(mid)
             return
         text += '%' + str(nums())
-    conn = sqlite3.connect(db)
+    conn = sqlite3.connect(user_db(kods[mid]))
     cur = conn.cursor()
     cur.execute("SELECT bal FROM bank WHERE login = '%s' AND name = '%s'"%(kods[mid],spend[mid]))
     for row in cur:
@@ -2311,7 +2369,7 @@ def bank_fin_his2(message):
         vr.pop(mid)
         return
 
-    conn = sqlite3.connect(db)
+    conn = sqlite3.connect(user_db(kods[mid]))
     cur = conn.cursor()
     stroka = "Ваши доходы с " + str(sday) + "." + str(smon) + "." + str(syear) + ' по ' + str(fday) + "." + str(fmon) + "." + str(fyear) + "\n"
     if spend[mid] != 'ВСЕ':
@@ -2428,7 +2486,7 @@ def bank_fin_edit2(message): #дата
         bot.send_message(mid, "Неверный формат ввода", reply_markup = MUP[users[mid]])
         vr.pop(mid)
         return
-    conn = sqlite3.connect(db)
+    conn = sqlite3.connect(user_db(kods[mid]))
     cur = conn.cursor()
     stroka = "Ваши доходы по данным параметрам\n\n"
     kol = 0
@@ -2468,7 +2526,7 @@ def bank_fin_edit3(message):
     txt = vr1[mid][text]
     vr2[mid] = txt
     txt = txt.split('%')
-    conn = sqlite3.connect(db)
+    conn = sqlite3.connect(user_db(kods[mid]))
     cur = conn.cursor()
     cur.execute("SELECT sum FROM inc WHERE login = '%s' AND year = '%d' AND month = '%d' AND day = '%d' AND bank = '%s' AND cat = '%s' AND name = '%s'"%(kods[mid],tme[mid][2],tme[mid][1],tme[mid][0],spend[mid],vr[mid],vr2[mid]))
     for row in cur:
@@ -2508,7 +2566,7 @@ def bank_fin_edit4(message):
     if text not in vr1[mid]:
         bot.send_message(mid, "У вас нет такой категории", reply_markup = MUP[users[mid]])
         return
-    conn = sqlite3.connect(db)
+    conn = sqlite3.connect(user_db(kods[mid]))
     cur = conn.cursor()
     cur.execute("UPDATE inc SET cat = '%s' WHERE login = '%s' AND year = '%d' AND month = '%d' AND day = '%d' AND bank = '%s' AND name = '%s'"%(text,kods[mid],tme[mid][2],tme[mid][1],tme[mid][0],spend[mid],vr2[mid]))
     conn.commit()
@@ -2532,7 +2590,7 @@ def bank_fin_edit5(message):
     except Exception:
         bot.send_message(mid, "Неверный формат", reply_markup = MUP[users[mid]])
         return
-    conn = sqlite3.connect(db)
+    conn = sqlite3.connect(user_db(kods[mid]))
     cur = conn.cursor()
     cur.execute("SELECT bal FROM bank WHERE login = '%s' AND name = '%s'"%(kods[mid],spend[mid]))
     for row in cur:
@@ -2607,7 +2665,7 @@ def bank_tr3(message): #сумма перевода
     if vr2[mid] < 0:
         bot.send_message(mid, "У вас нет столько", reply_markup = MUP[users[mid]])	
         return
-    conn = sqlite3.connect(db)
+    conn = sqlite3.connect(user_db(kods[mid]))
     cur = conn.cursor()
     cur.execute("UPDATE bank SET bal = '%f' WHERE login = '%s' AND name = '%s'"%(vr2[mid],kods[mid],vr[mid]))
     cur.execute("UPDATE bank SET bal = '%f' WHERE login = '%s' AND name = '%s'"%(vr3[mid],kods[mid],vr1[mid]))
@@ -2632,7 +2690,7 @@ def callback_inline(call):
         
         if call.data == "gr_del_yes":
             users[mid] = 'main_debt_group'
-            conn = sqlite3.connect(db)
+            conn = sqlite3.connect(user_db(kods[mid]))
             cur = conn.cursor()
             cur.execute("DELETE FROM groups WHERE name = '%s' AND login = '%s'"%(vr[mid],kods[mid]))
             conn.commit()
@@ -2664,7 +2722,7 @@ def callback_inline(call):
             
         if call.data == "bank_del_yes":
             users[mid] = prev_step(users[mid])
-            conn = sqlite3.connect(db)
+            conn = sqlite3.connect(user_db(kods[mid]))
             cur = conn.cursor()
             cur.execute("DELETE FROM bank WHERE name = '%s' AND login = '%s'"%(vr[mid],kods[mid]))
             conn.commit()
@@ -2682,7 +2740,7 @@ def callback_inline(call):
 
         if call.data == "bank_spend_del_yes":
             users[mid] = prev_step(users[mid])
-            conn = sqlite3.connect(db)
+            conn = sqlite3.connect(user_db(kods[mid]))
             cur = conn.cursor()
             cur.execute("DELETE FROM spend WHERE login = '%s' AND year = '%d' AND month = '%d' AND day = '%d' AND bank = '%s' AND cat = '%s' AND name = '%s'"%(kods[mid],tme[mid][2],tme[mid][1],tme[mid][0],spend[mid],vr[mid],vr2[mid]))
             cur.execute("SELECT bal FROM bank WHERE login = '%s' AND name = '%s'"%(kods[mid],spend[mid]))
@@ -2711,7 +2769,7 @@ def callback_inline(call):
 
         if call.data == "bank_spend_chngcat":
             bot.edit_message_text(chat_id = mid, message_id = call.message.message_id, text = "Выберите новую категорию")
-            conn = sqlite3.connect(db)
+            conn = sqlite3.connect(user_db(kods[mid]))
             cur = conn.cursor()
             cur.execute("SELECT cat FROM cats WHERE login = '%s'"%(kods[mid]))
             markup1 = types.ReplyKeyboardMarkup()
@@ -2732,7 +2790,7 @@ def callback_inline(call):
 
         if call.data == "bank_fin_del_yes":
             users[mid] = prev_step(users[mid])
-            conn = sqlite3.connect(db)
+            conn = sqlite3.connect(user_db(kods[mid]))
             cur = conn.cursor()
             cur.execute("DELETE FROM inc WHERE login = '%s' AND year = '%d' AND month = '%d' AND day = '%d' AND bank = '%s' AND cat = '%s' AND name = '%s'"%(kods[mid],tme[mid][2],tme[mid][1],tme[mid][0],spend[mid],vr[mid],vr2[mid]))
             cur.execute("SELECT bal FROM bank WHERE login = '%s' AND name = '%s'"%(kods[mid],spend[mid]))
@@ -2761,7 +2819,7 @@ def callback_inline(call):
 
         if call.data == "bank_fin_chngcat":
             bot.edit_message_text(chat_id = mid, message_id = call.message.message_id, text = "Выберите новую категорию")
-            conn = sqlite3.connect(db)
+            conn = sqlite3.connect(user_db(kods[mid]))
             cur = conn.cursor()
             cur.execute("SELECT cat FROM fcats WHERE login = '%s'"%(kods[mid]))
             markup1 = types.ReplyKeyboardMarkup()
