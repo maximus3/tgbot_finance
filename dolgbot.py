@@ -5,10 +5,10 @@ from telebot import types
 
 """
 Планирующиеся изменения:
-
+Повторяющиеся элементы в группе
 """
 
-__version__ = '0.2.1.2'
+__version__ = '0.2.2'
 __chng__ = """
 2.0.0:
 Команды теперь не через слеш и на русском!
@@ -27,6 +27,9 @@ __chng__ = """
 Теперь нельзя заходить по одному логину с разных аккаунтов одновременно
 2.1.2:
 Оптимизация кода
+
+2.2.0:
+Добавлены группы. Теперь вы можете создать свою группу должников и каждый раз не писать их отдельно, а добавлять долг сразу всем.
 """
 __desc__ = """
 Данный бот предназначени для того, чтобы вы не забыли кто и сколько вам должен)
@@ -91,10 +94,11 @@ loadlogins()
 loadkods()
 
 markup = types.ReplyKeyboardMarkup()
-markup.row('ВХОД', 'ВЫХОД')
-markup.row('ДОЛГИ','ДОБАВИТЬ')
-markup.row('РЕДАКТИРОВАТЬ','РЕГИСТРАЦИЯ')
-markup.row('СМЕНА ПАРОЛЯ','О БОТЕ')
+markup.row('Вход', 'Выход')
+markup.row('Долги','Добавить')
+markup.row('Редактировать','Группы')
+markup.row('Регистрация')
+markup.row('Смена пароля','О боте')
 
 @bot.message_handler(commands=['errors'])
 def errors1(message):
@@ -209,6 +213,8 @@ def main(message):
                         kol = kol + 1
                         osum += row[1]
                     stroka += 'Всего человек: ' + str(kol) + '\nСумма: ' + str(osum)
+                    if kol == 0:
+                        stroka = 'У вас нет должников'
                     bot.send_message(mid, stroka, reply_markup=markup)
                     cur.close()
                     conn.close()
@@ -250,6 +256,31 @@ def main(message):
                     sent = bot.send_message(mid, 'Введите фамилию и имя должника, у которого хотите изменить долг или ОТМЕНА', reply_markup=markup1)
                     users[mid] = 1
                     bot.register_next_step_handler(sent, edit1)
+
+            elif text == 'ГРУППЫ':
+                if kods.get(mid) == None:
+                    bot.send_message(mid, 'Сначала вам нужно авторизоваться')
+                else:
+                    stroka = ""
+                    stroka += 'Ваши группы:\n'
+                    markupGR = types.ReplyKeyboardMarkup()
+                    markupGR.row('Назад')
+                    markupGR.row('Добавить группу')
+                    conn = sqlite3.connect(db)
+                    cur = conn.cursor()
+                    i = 1
+                    cur.execute("SELECT name, kol FROM groups WHERE login = '%s'"%(kods[mid]))
+                    for row in cur:
+                        stroka += str(i) + ') ' + row[0] + '\nКоличество людей: ' + str(row[1]) + '\n\n'
+                        markupGR.row(row[0])
+                        i = i + 1
+                    cur.close()
+                    conn.close()
+                    if i == 1:
+                        stroka = 'У вас нет групп'
+                    sent =bot.send_message(mid, stroka, reply_markup=markupGR)
+                    users[mid] = 1
+                    bot.register_next_step_handler(sent, group1)
 
         else:
             bot.send_message(mid, 'Проводятся технические работы')
@@ -480,24 +511,25 @@ def addcredit(message):
 def edit1(message):
     text = message.text
     mid = message.chat.id
+    users[mid] = 0
     if text != 'ОТМЕНА':
         try:
             fam, im = text.split()
         except Exception:
             bot.send_message(mid, 'Некорректный ввод', reply_markup=markup)
-            users[mid] = 0
             return
         markup1 = types.ReplyKeyboardMarkup()
         markup1.row('ОТМЕНА')
         conn = sqlite3.connect(db)
         cur = conn.cursor()
-        cur.execute("SELECT sz FROM credits WHERE cred = '%s'"%(fam + ' ' + im))
+        cur.execute("SELECT sz FROM credits WHERE cred = '%s' AND login = '%s'"%(fam + ' ' + im,kods[mid]))
         for row in cur:
             markup1.row(str(-row[0]))
         cur.close()
         conn.close()
         vr[mid] = fam + ' ' + im
         sent = bot.send_message(mid, 'Введите сумму или ОТМЕНА', reply_markup=markup1)
+        users[mid] = 1
         bot.register_next_step_handler(sent, edit2)
     else:
         bot.send_message(mid, 'Отмена выполнена', reply_markup=markup)
@@ -549,5 +581,250 @@ def edit2(message):
     else:
         bot.send_message(mid, 'Отмена выполнена', reply_markup=markup)
 
+def group1(message):
+    text = message.text
+    mid = message.chat.id
+    text = text.upper()
+    users[mid] = 0
+    if text != 'НАЗАД':
+        if text == 'ДОБАВИТЬ ГРУППУ':
+            markup1 = types.ReplyKeyboardMarkup()
+            markup1.row('ОТМЕНА')
+            sent =bot.send_message(mid, 'Введите название группы', reply_markup=markup1)
+            users[mid] = 1
+            bot.register_next_step_handler(sent, group2)
+        else:
+            stroka = 'Такой группы нет'
+            conn = sqlite3.connect(db)
+            cur = conn.cursor()
+            cur.execute("SELECT name,kol,pep FROM groups WHERE login = '%s'"%(kods[mid]))
+            for row in cur:
+                if text.upper() == row[0].upper():
+                    stroka = row[0] + '\nКоличество людей: ' + str(row[1]) + '\n' + row[2] + '\n\nВыберите действие'
+                    markupG = types.ReplyKeyboardMarkup()
+                    markupG.row('Меню')
+                    markupG.row('Удалить группу')
+                    markupG.row('Добавить долг')
+                    sent = bot.send_message(mid, stroka, reply_markup=markupG)
+                    users[mid] = 1
+                    vr[mid] = row[0]
+                    bot.register_next_step_handler(sent, group4)
+                    cur.close()
+                    conn.close()
+                    return
+            cur.close()
+            conn.close()
+            bot.send_message(mid, stroka, reply_markup=markup)
+    else:
+      bot.send_message(mid, 'Вот меню:', reply_markup=markup)
+
+def group2(message):
+    text = message.text
+    mid = message.chat.id
+    text1 = text.upper()
+    users[mid] = 0
+    if text != 'ОТМЕНА':
+        conn = sqlite3.connect(db)
+        cur = conn.cursor()
+        cur.execute("SELECT name FROM groups WHERE login = '%s'"%(kods[mid]))
+        for row in cur:
+            if text1 == row[0].upper():
+                bot.send_message(mid, 'Данная группа уже есть', reply_markup=markup)
+                cur.close()
+                conn.close()
+                return
+        cur.close()
+        conn.close()
+        vr[mid] = text
+        markup1 = types.ReplyKeyboardMarkup()
+        markup1.row('ОТМЕНА')
+        sent = bot.send_message(mid, 'Введите участников группы (имя и фамилия через пробел) в разных строчках', reply_markup=markup1)
+        users[mid] = 1
+        bot.register_next_step_handler(sent, group3)
+    else:
+        bot.send_message(mid, 'Отмена выполнена', reply_markup=markup)
+
+def group3(message):
+    text = message.text
+    mid = message.chat.id
+    users[mid] = 0
+    if text != 'ОТМЕНА':
+        text1 = text.split('\n')
+        i = 0
+        for row in text1:
+            i = i + 1
+            try:
+                fam, im = row.split()
+            except Exception:
+                bot.send_message(mid, 'Некорректный ввод', reply_markup=markup)
+                vr.pop(mid)
+                return
+        conn = sqlite3.connect(db)
+        cur = conn.cursor()
+        cur.execute("INSERT INTO groups (login,name,kol,pep) VALUES ('%s','%s','%d','%s')"%(kods[mid],vr[mid],i,text))
+        conn.commit()
+        cur.close()
+        conn.close()
+        vr.pop(mid)
+        bot.send_message(mid, 'Группа создана', reply_markup=markup)
+    else:
+        bot.send_message(mid, 'Отмена выполнена', reply_markup=markup)
+
+def group4(message):
+    text = message.text
+    mid = message.chat.id
+    users[mid] = 0
+    if text.upper() == 'МЕНЮ':
+        bot.send_message(mid, 'Вот меню:', reply_markup=markup)
+    elif text.upper() == 'УДАЛИТЬ ГРУППУ':
+        keybGR = types.InlineKeyboardMarkup()
+        cbtn1 = types.InlineKeyboardButton(text="Да", callback_data="gr_del_yes")
+        cbtn2 = types.InlineKeyboardButton(text="Нет", callback_data="gr_del_no")
+        keybGR.add(cbtn1, cbtn2)
+        users[mid] = 1
+        bot.send_message(mid, 'Удалить группу "' + vr[mid] + '"?', reply_markup = keybGR)
+    elif text.upper() == 'ДОБАВИТЬ ДОЛГ':
+        keybGR = types.InlineKeyboardMarkup()
+        cbtn1 = types.InlineKeyboardButton(text="Добавить", callback_data="gr_yes")
+        cbtn2 = types.InlineKeyboardButton(text="Оставить", callback_data="gr_no")
+        keybGR.add(cbtn1, cbtn2)
+        users[mid] = 1
+        bot.send_message(mid, 'Вы хотите добавить существующим учасиникам долг или оставить их долг таким же?', reply_markup = keybGR)  
+    else:
+        bot.send_message(mid, 'Я вас не понимаю. Вот меню:', reply_markup=markup)
+
+def group5(message):
+    text = message.text
+    mid = message.chat.id
+    if text != 'ОТМЕНА':
+        try:
+            text = int(text)
+        except Exception:
+            bot.send_message(mid, 'Некорректный ввод', reply_markup=markup)
+            vr.pop(mid)
+            users[mid] = 0
+            return
+        pep1 = []
+        pep2 = []
+        conn = sqlite3.connect(db)
+        cur = conn.cursor()
+        cur.execute("SELECT pep FROM groups WHERE login = '%s' AND name = '%s'"%(kods[mid],vr[mid]))
+        vr.pop(mid)
+        for row in cur:
+            pep = row[0].split('\n')
+        for row1 in pep:
+            row1 = row1.split()
+            ckod = 0
+            cur.execute("SELECT cred FROM credits WHERE login = '%s'"%(kods[mid]))
+            for row in cur:
+                if row1[0] + ' ' + row1[1] == row[0]:
+                    pep1.append(row1[0] + ' ' + row1[1])
+                    ckod = 1
+                elif row1[1] + ' ' + row[0] == row[0]:
+                    pep1.append(row1[1] + ' ' + row1[0])
+                    ckod = 1
+            if ckod == 0:
+                pep2.append(row1[0] + ' ' + row1[1])
+        for row in pep2:
+            cur.execute("INSERT INTO credits (login,cred,sz) VALUES ('%s','%s','%d')"%(kods[mid],row,text))
+            conn.commit()
+        for fam in pep1:
+            cur.execute("SELECT sz FROM credits WHERE login = '%s' AND cred = '%s'"%(kods[mid],fam))
+            zn = 0
+            for row in cur:
+                zn = row[0] + text
+            if zn == 0:
+                cur.execute("DELETE FROM credits WHERE login = '%s' AND cred = '%s'"%(kods[mid],fam))
+            else:
+                cur.execute("UPDATE credits SET sz = '%d' WHERE login = '%s' AND cred = '%s'"%(zn,kods[mid],fam))
+            conn.commit()
+        cur.close()
+        conn.close()
+        users[mid] = 0
+        bot.send_message(mid, 'Операция выполнена', reply_markup=markup)
+    else:
+        users[mid] = 0
+        bot.send_message(mid, 'Отмена выполнена', reply_markup=markup)
+
+def group6(message):
+    text = message.text
+    mid = message.chat.id
+    if text != 'ОТМЕНА':
+        try:
+            text = int(text)
+        except Exception:
+            bot.send_message(mid, 'Некорректный ввод', reply_markup=markup)
+            vr.pop(mid)
+            users[mid] = 0
+            return
+        pep2 = []
+        conn = sqlite3.connect(db)
+        cur = conn.cursor()
+        cur.execute("SELECT pep FROM groups WHERE login = '%s' AND name = '%s'"%(kods[mid],vr[mid]))
+        vr.pop(mid)
+        for row in cur:
+            pep = row[0].split('\n')
+        for row1 in pep:
+            row1 = row1.split()
+            kod = 0
+            cur.execute("SELECT cred FROM credits WHERE login = '%s'"%(kods[mid]))
+            for row in cur:
+                if (row1[0] + ' ' + row1[1] == row[0]) or (row1[1] + ' ' + row1[0] == row[0]):
+                    kod = 1
+            if kod == 0:
+                pep2.append(row1[0] + ' ' + row1[1])
+        for row in pep2:
+            cur.execute("INSERT INTO credits (login,cred,sz) VALUES ('%s','%s','%d')"%(kods[mid],row,text))
+            conn.commit()
+        cur.close()
+        conn.close()
+        users[mid] = 0
+        bot.send_message(mid, 'Операция выполнена', reply_markup=markup)
+    else:
+        users[mid] = 0
+        bot.send_message(mid, 'Отмена выполнена', reply_markup=markup)
+
+"""
+keybGR = types.InlineKeyboardMarkup()
+cbtn1 = types.InlineKeyboardButton(text="Добавить", callback_data="gr_yes")
+cbtn2 = types.InlineKeyboardButton(text="Оставить", callback_data="gr_no")
+keybGR.add(cbtn1, cbtn2)
+bot.send_message(mid, 'Вы хотите добавить существующим учасиникам долг или оставить их долг таким же?', reply_markup = keybGR)  
+"""
+
+@bot.callback_query_handler(func=lambda call: True)
+def callback_inline(call):
+    # Если сообщение из чата с ботом
+    if call.message:
+        mid = call.message.chat.id
+        if call.data == "gr_del_yes":
+            users[mid] = 0
+            conn = sqlite3.connect(db)
+            cur = conn.cursor()
+            cur.execute("DELETE FROM groups WHERE name = '%s'"%(vr[mid]))
+            conn.commit()
+            cur.close()
+            conn.close()
+            vr.pop(mid)
+            bot.edit_message_text(chat_id = mid, message_id = call.message.message_id, text = "Удвление выполнено")
+            bot.send_message(mid, "Вот меню:", reply_markup=markup)
+        if call.data == "gr_del_no":
+            users[mid] = 0
+            vr.pop(mid)
+            bot.edit_message_text(chat_id = mid, message_id = call.message.message_id, text = "Хорошо, не будем удалять")
+            bot.send_message(mid, "Вот меню:", reply_markup=markup)
+        if call.data == "gr_yes":
+            bot.edit_message_text(chat_id = mid, message_id = call.message.message_id, text = "Будем добавлять еще долг уже существующим")
+            markup1 = types.ReplyKeyboardMarkup()
+            markup1.row('ОТМЕНА')
+            sent = bot.send_message(mid, 'Введите размер долга', reply_markup=markup1)
+            bot.register_next_step_handler(sent, group5)
+        if call.data == "gr_no":
+            bot.edit_message_text(chat_id = mid, message_id = call.message.message_id, text = "Оставим у существующих все как есть")
+            markup1 = types.ReplyKeyboardMarkup()
+            markup1.row('ОТМЕНА')
+            sent = bot.send_message(mid, 'Введите размер долга', reply_markup=markup1)
+            bot.register_next_step_handler(sent, group6)
+            
 bot.polling(none_stop=True)
 
