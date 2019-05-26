@@ -7,7 +7,7 @@ import cherrypy
 
 TOKEN = 'TGBOT_TOKEN_HERE'
 
-__version__ = '0.4.2.2 Beta'
+__version__ = '0.4.3.0 Beta'
 __chng__ = """
 2.0.0:
 Команды теперь не через слеш и на русском!
@@ -73,10 +73,13 @@ WebHook!!!
 4.2.2:
 Добавлены расходы и доходы по категориям при показе общих расходов
 4.3.0:
-- Добавлена возможность редактирования расходов и доходов
 При добавлении нового счета можно указать стартовый баланс
+Добавлена возможность редактирования расходов и доходов, а также возможность перенести перенести расходы и доходы из одной категории в другую
+Мелкие исправления
+"""
+
+"""
 - Возможно поменять имя категории
-- Возможно перенести расход из одной категории в другую
 """
 
 __desc__ = """
@@ -136,13 +139,13 @@ markupBank.row('Назад')
 
 markupSpend = types.ReplyKeyboardMarkup()
 markupSpend.row('Расходы за период')
-markupSpend.row('Новый расход','Удалить расход')
+markupSpend.row('Новый расход','Редактировать расход')
 markupSpend.row('Поменять счет','Категории')
 markupSpend.row('Назад')
 
 markupFin = types.ReplyKeyboardMarkup()
 markupFin.row('Доходы за период')
-markupFin.row('Новый доход','Удалить доход')
+markupFin.row('Новый доход','Редактировать доход')
 markupFin.row('Поменять счет','Категории')
 markupFin.row('Назад')
 
@@ -633,7 +636,7 @@ def main(message):
             users[mid] = 'main_bank_spend_cat'
             watch_cat(mid)
 
-        elif text == 'УДАЛИТЬ РАСХОД':
+        elif text == 'РЕДАКТИРОВАТЬ РАСХОД':
             if spend[mid] == 'ВСЕ':
                 bot.send_message(mid, "Сначала поменяйте счет", reply_markup = MUP[users[mid]])
                 return
@@ -653,9 +656,9 @@ def main(message):
             if kol == 0:
                 bot.send_message(mid, "У вас нет категорий", reply_markup = MUP[users[mid]])
                 return
-            users[mid] = 'main_bank_spend_del'
-            sent = bot.send_message(mid, "Выберите категорию расхода, который хотите удалить\nТекущий счет: " + spend[mid], reply_markup = markup1)
-            bot.register_next_step_handler(sent, bank_spend_del1)
+            users[mid] = 'main_bank_spend_edit'
+            sent = bot.send_message(mid, "Выберите категорию расхода, который хотите редактировать\nТекущий счет: " + spend[mid], reply_markup = markup1)
+            bot.register_next_step_handler(sent, bank_spend_edit1)
 
     elif users[mid] == 'main_bank_spend_cat':
 
@@ -719,7 +722,7 @@ def main(message):
                 bot.send_message(mid, "У вас нет категорий, чтобы добавить доход", reply_markup = MUP[users[mid]])
                 return
             users[mid] = 'main_bank_fin_add'
-            sent = bot.send_message(mid, "Выберите категорию расхода\nТекущий счет: " + spend[mid], reply_markup = markup1)
+            sent = bot.send_message(mid, "Выберите категорию дохода\nТекущий счет: " + spend[mid], reply_markup = markup1)
             bot.register_next_step_handler(sent, bank_fin_add1)
             
         elif text == 'ДОХОДЫ ЗА ПЕРИОД':
@@ -758,7 +761,7 @@ def main(message):
             users[mid] = 'main_bank_fin_cat'
             watch_fcat(mid)
 
-        elif text == 'УДАЛИТЬ ДОХОД':
+        elif text == 'РЕДАКТИРОВАТЬ ДОХОД':
             if spend[mid] == 'ВСЕ':
                 bot.send_message(mid, "Сначала поменяйте счет", reply_markup = MUP[users[mid]])
                 return
@@ -778,9 +781,9 @@ def main(message):
             if kol == 0:
                 bot.send_message(mid, "У вас нет категорий", reply_markup = MUP[users[mid]])
                 return
-            users[mid] = 'main_bank_fin_del'
-            sent = bot.send_message(mid, "Выберите категорию дохода, который хотите удалить\nТекущий счет: " + spend[mid], reply_markup = markup1)
-            bot.register_next_step_handler(sent, bank_fin_del1)
+            users[mid] = 'main_bank_fin_edit'
+            sent = bot.send_message(mid, "Выберите категорию дохода, который хотите редактировать\nТекущий счет: " + spend[mid], reply_markup = markup1)
+            bot.register_next_step_handler(sent, bank_fin_edit1)
 
     elif users[mid] == 'main_bank_fin_cat':
 
@@ -1423,7 +1426,7 @@ def new_bank(mid):
     users[mid] = 'main_bank_add'
     bot.register_next_step_handler(sent, bank_add1)
 
-def bank_add1(message):###########################################3
+def bank_add1(message):
     mid = message.chat.id
     text = message.text
     users[mid] = prev_step(users[mid])
@@ -1824,12 +1827,12 @@ def bank_spend_add3(message):
         bot.send_message(mid, "Выберите действие", reply_markup = MUP[users[mid]])
         vr.pop(mid)
         return
-    if text[0] == '-':
+    text = text.split()
+    ras = 0
+    if text[len(text)-1] == '-':
         bot.send_message(mid, "Отрицательный расход? Хаха, нет", reply_markup = MUP[users[mid]])
         vr.pop(mid)
         return
-    text = text.split()
-    ras = 0
     try:
         ras = float(check_num((text[len(text)-1])))
     except Exception:
@@ -1868,7 +1871,7 @@ def bank_spend_add3(message):
     vr.pop(mid)
     bot.send_message(mid, "Операция выполнена", reply_markup = MUP[users[mid]])
 
-def bank_spend_del1(message):
+def bank_spend_edit1(message):
     mid = message.chat.id
     text = message.text
     users[mid] = prev_step(users[mid])
@@ -1885,11 +1888,11 @@ def bank_spend_del1(message):
     markup1.row('ОТМЕНА')
     markup1.row('Сегодня')
     markup1.row('Вчера')
-    users[mid] = 'main_bank_spend_del'
-    sent = bot.send_message(mid, "За какое число расход вы хотите удалить? (Формат: дд мм гггг", reply_markup = markup1)
-    bot.register_next_step_handler(sent, bank_spend_del2)
+    users[mid] = 'main_bank_spend_edit'
+    sent = bot.send_message(mid, "За какое число расход вы хотите редактировать? (Формат: дд мм гггг)", reply_markup = markup1)
+    bot.register_next_step_handler(sent, bank_spend_edit2)
 
-def bank_spend_del2(message): #дата
+def bank_spend_edit2(message): #дата
     mid = message.chat.id
     text = message.text
     users[mid] = prev_step(users[mid])
@@ -1919,8 +1922,7 @@ def bank_spend_del2(message): #дата
     cur = conn.cursor()
     stroka = "Ваши расходы по данным параметрам\n\n"
     kol = 0
-    vr1[mid] = []
-    vr2[mid] = []
+    vr1[mid] = {}
     markup1 = types.ReplyKeyboardMarkup()
     markup1.row('ОТМЕНА')
     cur.execute("SELECT name, sum FROM spend WHERE login = '%s' AND year = '%d' AND month = '%d' AND day = '%d' AND bank = '%s' AND cat = '%s'"%(kods[mid],tme[mid][2],tme[mid][1],tme[mid][0],spend[mid],vr[mid]))
@@ -1928,53 +1930,107 @@ def bank_spend_del2(message): #дата
         kol += 1
         txt = row[0]
         txt = txt.split('%')
-        markup1.row('%' + txt[1])
-        stroka += 'Сумма: ' + str(row[1]) + '\n' + txt[0] + ' %' + txt[1] + '\n\n'
-        vr1[mid].append(txt[1])
-        vr2[mid].append(row[0])
+        markup1.row(str(kol))
+        stroka += 'Номер ' + str(kol) + '\n' + 'Сумма: ' + str(row[1]) + '\n' + txt[0] + '\n\n'
+        vr1[mid][str(kol)] = row[0]#номер и описание
     cur.close()
     conn.close()
     if kol == 0:
         bot.send_message(mid, "Нет таких расходов", reply_markup = MUP[users[mid]])
         return
-    users[mid] = 'main_bank_spend_del'
-    stroka += "Выберите номер расхода, который хотите удалить"
+    users[mid] = 'main_bank_spend_edit'
+    stroka += "Выберите номер расхода, который хотите редактировать"
     sent = bot.send_message(mid, stroka, reply_markup = markup1)
-    bot.register_next_step_handler(sent, bank_spend_del3)
+    bot.register_next_step_handler(sent, bank_spend_edit3)
 
-def bank_spend_del3(message):
+def bank_spend_edit3(message):
     mid = message.chat.id
     text = message.text
     users[mid] = prev_step(users[mid])
     if text.upper() == 'ОТМЕНА':
         bot.send_message(mid, "Выберите действие", reply_markup = MUP[users[mid]])
-        vr.pop(mid)
+        vr1.pop(mid)
         return
-    text = text.split('%')
-    if text[1] not in vr1[mid]:
-        bot.send_message(mid, "Такой категории нет", reply_markup = MUP[users[mid]])
+    if text not in vr1[mid]:
+        bot.send_message(mid, "Неверный формат или такого расхода нет", reply_markup = MUP[users[mid]])
+        vr1.pop(mid)
         return
-    vr2[mid] = vr2[mid][vr1[mid].index(text[1])]
-    vr1[mid] = text[1]
-    txt = vr2[mid]
+    txt = vr1[mid][text]
+    vr2[mid] = txt
     txt = txt.split('%')
     conn = sqlite3.connect(db)
     cur = conn.cursor()
     cur.execute("SELECT sum FROM spend WHERE login = '%s' AND year = '%d' AND month = '%d' AND day = '%d' AND bank = '%s' AND cat = '%s' AND name = '%s'"%(kods[mid],tme[mid][2],tme[mid][1],tme[mid][0],spend[mid],vr[mid],vr2[mid]))
     for row in cur:
         vr3[mid] = row[0]
-        stroka = 'Вы уверены, что хотите удалить этот расход?\nДата:' + str(tme[mid][0]) + '.' + str(tme[mid][1]) + '.' + str(tme[mid][2]) + '\n'
+        stroka = 'Что вы хотите сделать с расходом?\nДата:' + str(tme[mid][0]) + '.' + str(tme[mid][1]) + '.' + str(tme[mid][2]) + '\n'
         stroka += 'Счет: ' + spend[mid] + '\nКатегория: ' + vr[mid] + '\nСумма: ' + str(vr3[mid]) + '\n'
         if len(txt[0]) != 0:
             stroka += txt[0]
     cur.close()
     conn.close()
-    users[mid] = 'main_bank_spend_del'
+    users[mid] = 'main_bank_spend_edit'
     keybGR = types.InlineKeyboardMarkup()
     cbtn1 = types.InlineKeyboardButton(text="Удалить", callback_data="bank_spend_del_yes")
     cbtn2 = types.InlineKeyboardButton(text="Оставить", callback_data="bank_spend_del_no")
     keybGR.add(cbtn1, cbtn2)
+    cbtn1 = types.InlineKeyboardButton(text="Поменять категорию", callback_data="bank_spend_chngcat")
+    keybGR.add(cbtn1)
+    cbtn1 = types.InlineKeyboardButton(text="Поменять сумму", callback_data="bank_spend_chngsum")
+    keybGR.add(cbtn1)
     bot.send_message(mid, stroka, reply_markup = keybGR)
+
+def bank_spend_edit4(message):
+    mid = message.chat.id
+    text = message.text
+    users[mid] = prev_step(users[mid])
+    if text.upper() == 'ОТМЕНА':
+        bot.send_message(mid, "Выберите действие", reply_markup = MUP[users[mid]])
+        return
+    if text not in vr1[mid]:
+        bot.send_message(mid, "У вас нет такой категории", reply_markup = MUP[users[mid]])
+        return
+    conn = sqlite3.connect(db)
+    cur = conn.cursor()
+    cur.execute("UPDATE spend SET cat = '%s' WHERE login = '%s' AND year = '%d' AND month = '%d' AND day = '%d' AND bank = '%s' AND name = '%s'"%(text,kods[mid],tme[mid][2],tme[mid][1],tme[mid][0],spend[mid],vr2[mid]))
+    conn.commit()
+    cur.close()
+    conn.close()
+    bot.send_message(mid, "Категория изменена", reply_markup = MUP[users[mid]])
+
+def bank_spend_edit5(message):
+    mid = message.chat.id
+    text = message.text
+    users[mid] = prev_step(users[mid])
+    if text.upper() == 'ОТМЕНА':
+        bot.send_message(mid, "Выберите действие", reply_markup = MUP[users[mid]])
+        return
+    ras = 0
+    if text[0] == '-':
+        bot.send_message(mid, "Отрицательный расход? Хаха, нет", reply_markup = MUP[users[mid]])
+        return
+    try:
+        ras = float(check_num((text)))
+    except Exception:
+        bot.send_message(mid, "Неверный формат", reply_markup = MUP[users[mid]])
+        return
+    conn = sqlite3.connect(db)
+    cur = conn.cursor()
+    cur.execute("SELECT bal FROM bank WHERE login = '%s' AND name = '%s'"%(kods[mid],spend[mid]))
+    for row in cur:
+        bal = float(row[0])
+    bal += (vr3[mid]-ras)
+    if bal < 0:
+        bot.send_message(mid, "У вас столько нет", reply_markup = MUP[users[mid]])
+        cur.close()
+        conn.close()
+        return
+    cur.execute("UPDATE bank SET bal = '%f' WHERE login = '%s' AND name = '%s'"%(bal,kods[mid],spend[mid]))
+    cur.execute("UPDATE spend SET sum = '%f' WHERE login = '%s' AND year = '%d' AND month = '%d' AND day = '%d' AND bank = '%s' AND cat = '%s' AND name = '%s'"%(ras,kods[mid],tme[mid][2],tme[mid][1],tme[mid][0],spend[mid],vr[mid],vr2[mid]))
+    conn.commit()
+    cur.close()
+    conn.close()
+    bot.send_message(mid, "Сумма расхода изменена", reply_markup = MUP[users[mid]])
 
 def bank_fin(mid):
     users[mid] = 'main_bank_fin'
@@ -2102,7 +2158,7 @@ def bank_fin_add2(message): #дата
         vr.pop(mid)
         return
     users[mid] = 'main_bank_fin_add'
-    sent = bot.send_message(mid, "Напишите доход в формате: описание (не обязательно, не должно начинаться с числа) + сумма расхода")
+    sent = bot.send_message(mid, "Напишите доход в формате: описание (не обязательно, не должно начинаться с числа) + сумма дохода")
     bot.register_next_step_handler(sent, bank_fin_add3)
 
 def bank_fin_add3(message): #описание + доход
@@ -2113,12 +2169,12 @@ def bank_fin_add3(message): #описание + доход
         bot.send_message(mid, "Выберите действие", reply_markup = MUP[users[mid]])
         vr.pop(mid)
         return
-    if text[0] == '-':
+    text = text.split()
+    ras = 0
+    if text[len(text)-1] == '-':
         bot.send_message(mid, "Отрицательный доход? Хаха, нет", reply_markup = MUP[users[mid]])
         vr.pop(mid)
         return
-    text = text.split()
-    ras = 0
     try:
         ras = float(check_num(text[len(text)-1]))
     except Exception:
@@ -2325,7 +2381,7 @@ def bank_fin_his2(message):
         stroka = "Доходов за выбранный период по данным категориям и счету нет"
     bot.send_message(mid, stroka, reply_markup = MUP[users[mid]])
 
-def bank_fin_del1(message):
+def bank_fin_edit1(message):
     mid = message.chat.id
     text = message.text
     users[mid] = prev_step(users[mid])
@@ -2342,11 +2398,11 @@ def bank_fin_del1(message):
     markup1.row('ОТМЕНА')
     markup1.row('Сегодня')
     markup1.row('Вчера')
-    users[mid] = 'main_bank_fin_del'
-    sent = bot.send_message(mid, "За какое число доход вы хотите удалить? (Формат: дд мм гггг", reply_markup = markup1)
-    bot.register_next_step_handler(sent, bank_fin_del2)
+    users[mid] = 'main_bank_fin_edit'
+    sent = bot.send_message(mid, "За какое число доход вы хотите редактировать? (Формат: дд мм гггг)", reply_markup = markup1)
+    bot.register_next_step_handler(sent, bank_fin_edit2)
 
-def bank_fin_del2(message): #дата
+def bank_fin_edit2(message): #дата
     mid = message.chat.id
     text = message.text
     users[mid] = prev_step(users[mid])
@@ -2376,8 +2432,7 @@ def bank_fin_del2(message): #дата
     cur = conn.cursor()
     stroka = "Ваши доходы по данным параметрам\n\n"
     kol = 0
-    vr1[mid] = []
-    vr2[mid] = []
+    vr1[mid] = {}
     markup1 = types.ReplyKeyboardMarkup()
     markup1.row('ОТМЕНА')
     cur.execute("SELECT name, sum FROM inc WHERE login = '%s' AND year = '%d' AND month = '%d' AND day = '%d' AND bank = '%s' AND cat = '%s'"%(kods[mid],tme[mid][2],tme[mid][1],tme[mid][0],spend[mid],vr[mid]))
@@ -2385,42 +2440,40 @@ def bank_fin_del2(message): #дата
         kol += 1
         txt = row[0]
         txt = txt.split('%')
-        markup1.row('%' + txt[1])
-        stroka += 'Сумма: ' + str(row[1]) + '\n' + txt[0] + ' %' + txt[1] + '\n\n'
-        vr1[mid].append(txt[1])
-        vr2[mid].append(row[0])
+        markup1.row(str(kol))
+        stroka += 'Номер ' + str(kol) + '\n' + 'Сумма: ' + str(row[1]) + '\n' + txt[0] + '\n\n'
+        vr1[mid][str(kol)] = row[0]#номер и описание
     cur.close()
     conn.close()
     if kol == 0:
         bot.send_message(mid, "Нет таких доходов", reply_markup = MUP[users[mid]])
         return
-    users[mid] = 'main_bank_fin_del'
-    stroka += "Выберите номер дохода, который хотите удалить"
+    users[mid] = 'main_bank_fin_edit'
+    stroka += "Выберите номер дохода, который хотите редактировать"
     sent = bot.send_message(mid, stroka, reply_markup = markup1)
-    bot.register_next_step_handler(sent, bank_fin_del3)
+    bot.register_next_step_handler(sent, bank_fin_edit3)
 
-def bank_fin_del3(message):
+def bank_fin_edit3(message):
     mid = message.chat.id
     text = message.text
     users[mid] = prev_step(users[mid])
     if text.upper() == 'ОТМЕНА':
         bot.send_message(mid, "Выберите действие", reply_markup = MUP[users[mid]])
-        vr.pop(mid)
+        vr1.pop(mid)
         return
-    text = text.split('%')
-    if text[1] not in vr1[mid]:
-        bot.send_message(mid, "Такой категории нет", reply_markup = MUP[users[mid]])
+    if text not in vr1[mid]:
+        bot.send_message(mid, "Неверный формат или такого дохода нет", reply_markup = MUP[users[mid]])
+        vr1.pop(mid)
         return
-    vr2[mid] = vr2[mid][vr1[mid].index(text[1])]
-    vr1[mid] = text[1]
-    txt = vr2[mid]
+    txt = vr1[mid][text]
+    vr2[mid] = txt
     txt = txt.split('%')
     conn = sqlite3.connect(db)
     cur = conn.cursor()
     cur.execute("SELECT sum FROM inc WHERE login = '%s' AND year = '%d' AND month = '%d' AND day = '%d' AND bank = '%s' AND cat = '%s' AND name = '%s'"%(kods[mid],tme[mid][2],tme[mid][1],tme[mid][0],spend[mid],vr[mid],vr2[mid]))
     for row in cur:
         vr3[mid] = row[0]
-        stroka = 'Вы уверены, что хотите удалить этот доход?\nДата:' + str(tme[mid][0]) + '.' + str(tme[mid][1]) + '.' + str(tme[mid][2]) + '\n'
+        stroka = 'Что вы хотите сделать с доходом?\nДата:' + str(tme[mid][0]) + '.' + str(tme[mid][1]) + '.' + str(tme[mid][2]) + '\n'
         stroka += 'Счет: ' + spend[mid] + '\nКатегория: ' + vr[mid] + '\nСумма: ' + str(vr3[mid]) + '\n'
         if len(txt[0]) != 0:
             stroka += txt[0]
@@ -2430,15 +2483,72 @@ def bank_fin_del3(message):
     cur.close()
     conn.close()
     bal -= vr3[mid]
-    if bal < 0:
-        bot.send_message(mid, "Невозможно, так как денежных средств останется меньше 0", reply_markup = MUP[users[mid]])
-        return
-    users[mid] = 'main_bank_fin_del'
+    users[mid] = 'main_bank_fin_edit'
     keybGR = types.InlineKeyboardMarkup()
     cbtn1 = types.InlineKeyboardButton(text="Удалить", callback_data="bank_fin_del_yes")
     cbtn2 = types.InlineKeyboardButton(text="Оставить", callback_data="bank_fin_del_no")
-    keybGR.add(cbtn1, cbtn2)
+    if bal < 0:
+        stroka += "\n\nДоход невозможно удалить, так как денежных средств останется меньше 0"
+        keybGR.add(cbtn2)
+    else:
+        keybGR.add(cbtn1, cbtn2)
+    cbtn1 = types.InlineKeyboardButton(text="Поменять категорию", callback_data="bank_fin_chngcat")
+    keybGR.add(cbtn1)
+    cbtn1 = types.InlineKeyboardButton(text="Поменять сумму", callback_data="bank_fin_chngsum")
+    keybGR.add(cbtn1)
     bot.send_message(mid, stroka, reply_markup = keybGR)
+
+def bank_fin_edit4(message):
+    mid = message.chat.id
+    text = message.text
+    users[mid] = prev_step(users[mid])
+    if text.upper() == 'ОТМЕНА':
+        bot.send_message(mid, "Выберите действие", reply_markup = MUP[users[mid]])
+        return
+    if text not in vr1[mid]:
+        bot.send_message(mid, "У вас нет такой категории", reply_markup = MUP[users[mid]])
+        return
+    conn = sqlite3.connect(db)
+    cur = conn.cursor()
+    cur.execute("UPDATE inc SET cat = '%s' WHERE login = '%s' AND year = '%d' AND month = '%d' AND day = '%d' AND bank = '%s' AND name = '%s'"%(text,kods[mid],tme[mid][2],tme[mid][1],tme[mid][0],spend[mid],vr2[mid]))
+    conn.commit()
+    cur.close()
+    conn.close()
+    bot.send_message(mid, "Категория изменена", reply_markup = MUP[users[mid]])
+
+def bank_fin_edit5(message):
+    mid = message.chat.id
+    text = message.text
+    users[mid] = prev_step(users[mid])
+    if text.upper() == 'ОТМЕНА':
+        bot.send_message(mid, "Выберите действие", reply_markup = MUP[users[mid]])
+        return
+    ras = 0
+    if text[0] == '-':
+        bot.send_message(mid, "Отрицательный доход? Хаха, нет", reply_markup = MUP[users[mid]])
+        return
+    try:
+        ras = float(check_num((text)))
+    except Exception:
+        bot.send_message(mid, "Неверный формат", reply_markup = MUP[users[mid]])
+        return
+    conn = sqlite3.connect(db)
+    cur = conn.cursor()
+    cur.execute("SELECT bal FROM bank WHERE login = '%s' AND name = '%s'"%(kods[mid],spend[mid]))
+    for row in cur:
+        bal = float(row[0])
+    bal -= (vr3[mid]-ras)
+    if bal < 0:
+        bot.send_message(mid, "У вас столько нет", reply_markup = MUP[users[mid]])
+        cur.close()
+        conn.close()
+        return
+    cur.execute("UPDATE bank SET bal = '%f' WHERE login = '%s' AND name = '%s'"%(bal,kods[mid],spend[mid]))
+    cur.execute("UPDATE inc SET sum = '%f' WHERE login = '%s' AND year = '%d' AND month = '%d' AND day = '%d' AND bank = '%s' AND cat = '%s' AND name = '%s'"%(ras,kods[mid],tme[mid][2],tme[mid][1],tme[mid][0],spend[mid],vr[mid],vr2[mid]))
+    conn.commit()
+    cur.close()
+    conn.close()
+    bot.send_message(mid, "Сумма дохода изменена", reply_markup = MUP[users[mid]])
 
 def bank_tr1(message):
     mid = message.chat.id
@@ -2599,6 +2709,27 @@ def callback_inline(call):
             bot.edit_message_text(chat_id = mid, message_id = call.message.message_id, text = "Хорошо, не будем удалять")
             bot.send_message(mid, "Выберите действие", reply_markup = MUP[users[mid]])
 
+        if call.data == "bank_spend_chngcat":
+            bot.edit_message_text(chat_id = mid, message_id = call.message.message_id, text = "Выберите новую категорию")
+            conn = sqlite3.connect(db)
+            cur = conn.cursor()
+            cur.execute("SELECT cat FROM cats WHERE login = '%s'"%(kods[mid]))
+            markup1 = types.ReplyKeyboardMarkup()
+            markup1.row('ОТМЕНА')
+            vr1[mid] = []
+            for row in cur:
+                markup1.row(row[0])
+                vr1[mid].append(row[0])
+            cur.close()
+            conn.close()
+            sent = bot.send_message(mid, "Список категорий ниже", reply_markup = markup1)
+            bot.register_next_step_handler(sent, bank_spend_edit4)
+
+        if call.data == "bank_spend_chngsum":
+            bot.edit_message_text(chat_id = mid, message_id = call.message.message_id, text = "Не забудьте, что у вас изменится и счет")
+            sent = bot.send_message(mid, "Напишите новую сумму", reply_markup = markupCanc)
+            bot.register_next_step_handler(sent, bank_spend_edit5)
+
         if call.data == "bank_fin_del_yes":
             users[mid] = prev_step(users[mid])
             conn = sqlite3.connect(db)
@@ -2627,6 +2758,28 @@ def callback_inline(call):
             tme.pop(mid)
             bot.edit_message_text(chat_id = mid, message_id = call.message.message_id, text = "Хорошо, не будем удалять")
             bot.send_message(mid, "Выберите действие", reply_markup = MUP[users[mid]])
+
+        if call.data == "bank_fin_chngcat":
+            bot.edit_message_text(chat_id = mid, message_id = call.message.message_id, text = "Выберите новую категорию")
+            conn = sqlite3.connect(db)
+            cur = conn.cursor()
+            cur.execute("SELECT cat FROM fcats WHERE login = '%s'"%(kods[mid]))
+            markup1 = types.ReplyKeyboardMarkup()
+            markup1.row('ОТМЕНА')
+            vr1[mid] = []
+            for row in cur:
+                markup1.row(row[0])
+                vr1[mid].append(row[0])
+            cur.close()
+            conn.close()
+            sent = bot.send_message(mid, "Список категорий ниже", reply_markup = markup1)
+            bot.register_next_step_handler(sent, bank_fin_edit4)
+
+        if call.data == "bank_fin_chngsum":
+            bot.edit_message_text(chat_id = mid, message_id = call.message.message_id, text = "Не забудьте, что у вас изменится и счет")
+            sent = bot.send_message(mid, "Напишите новую сумму", reply_markup = markupCanc)
+            bot.register_next_step_handler(sent, bank_fin_edit5)
+
 
 #WEBHOOK_START
 
