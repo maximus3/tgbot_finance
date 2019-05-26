@@ -232,6 +232,20 @@ def check_text(text, tp):
             if (not (i >= 'A' and i <= 'Z')) and i != ' ' and (not (i >= '0' and i <= '9')) and (not (i >= 'a' and i <= 'z')):
                 return True
         return False
+    elif tp == 'login':
+        if len(text) > 32:
+            return True
+        for i in text:
+            if (not (i >= '0' and i <= '9')) and (not (i >= 'a' and i <= 'z')):
+                return True
+        return False
+    elif tp == 'pass':
+        if len(text) > 32:
+            return True
+        for i in text:
+            if (not (i >= 'A' and i <= 'Z')) and (not (i >= '0' and i <= '9')) and (not (i >= 'a' and i <= 'z')):
+                return True
+        return False
     elif tp == 'ruseng1':
         for i in text:
             if (not (i >= 'A' and i <= 'Z')) and i != 'ё' and i != ' ' and (not (i >= '0' and i <= '9')) and (not (i >= 'a' and i <= 'z')) and (not (i >= 'а' and i <= 'я')) and (not (i >= 'А' and i <= 'Я')):
@@ -247,6 +261,8 @@ def phrase_in(text):
     cur.execute("SELECT phrase FROM alice")
     for row in cur:
         if row[0] == text:
+            cur.close()
+            conn.close()
             return True
     cur.close()
     conn.close()

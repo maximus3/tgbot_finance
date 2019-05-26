@@ -7,7 +7,7 @@ TOKEN = 'TGBOT_TOKEN_HERE'
 metrik_key = 'METRIK_TOKEN_HERE'
 
 # Версия телеграм-бота
-version = '0.5.1.2 Beta'
+version = '0.5.1.3 Beta'
 
 """
 0.2.0.0:
@@ -112,39 +112,28 @@ WebHook!!!
 Исправлены мелкие баги
 0.5.1.1:
 Расходы и доходы по неделям
-"""
-
-chng = """
 0.5.1.2:
 Диаграммы!
 """
 
+chng = """
+0.5.1.3:
+После регистрации вы сразу входите в аккаунт
+Изменено взаимодействие с inline-кнопками
+Немного изменен интерфейс
+Исправление багов
+Оптимизация программы
+"""
+
 # Описание телеграм-бота
 desc = """
-Данный бот был создан для того, чтобы вы могли вести учет своих расходов и доходов.
-
-Пока автоматическая настройка недоступна, поэтому для начала работы вам нужно:
-1) Создать какой-то счет, где вы храните деньги ("карточка", "кошелек", "наличка" итп)
-2) Создать категории расходов ("еда", "транспорт" итп)
-3) Создать категории доходов ("зарплата", "подарки" итп)
-4) Начать пользоваться!
+Данный бот поможет вам вести учет своих расходов и доходов.
 
 За всеми обновлениями можно следить тут @finance_m3news
 
 Внимание! Данный бот находится в бета-версии и все еще разрабатывается. Прошу простить за всевозможные ошибки.
 По всем вопросам, жалобам, пожеланиям, комментариям и предложениям пишите в аккаунт @m3prod
 """
-
-
-WEBHOOK_HOST = 'HOST_HERE'
-WEBHOOK_PORT = 443  # 443, 80, 88 или 8443 (порт должен быть открыт!)
-WEBHOOK_LISTEN = '0.0.0.0'  # На некоторых серверах придется указывать такой же IP, что и выше
-
-WEBHOOK_SSL_CERT = '/root/debt/webhook_cert.pem'  # Путь к сертификату
-WEBHOOK_SSL_PRIV = '/root/debt/webhook_pkey.pem'  # Путь к приватному ключу
-
-WEBHOOK_URL_BASE = "https://%s:%s" % (WEBHOOK_HOST, WEBHOOK_PORT)
-WEBHOOK_URL_PATH = "/%s/" % (TOKEN)
 
 # Адрес общей базы данных
 db = '/root/debt/my.db'
@@ -155,7 +144,9 @@ code = 'пассажиры'
 # Описание ошибок
 ERRORS_DESC = """
 0 - все в порядке
-1 - остановлено пользователем
+1 - остановлено админом
+2 - бот не запущен после перезагрузки
+3 - может работать только админ
 """
 
 # Словарь, преобразующий строки вида Mmm в число или наоборот (месяц)
@@ -164,6 +155,10 @@ month = {'Jan':1,'Feb':2,'Mar':3,'Apr':4,'May':5,'Jun':6,'Jul':7,'Aug':8,'Sep':9
 mdays = {1:31,2:28,3:31,4:30,5:31,6:30,7:31,8:31,9:30,10:31,11:30,12:31}
 # Словарь, возвращающий номер дня недели
 days = {'Mon':1, 'Tue':2, 'Wed':3, 'Thu':4, 'Fri':5, 'Sat':6, 'Sun':7}
+# Список стандартных категорий расходов
+categ_sp = ['транспорт', 'продукты', 'кафе и рестораны', 'отдых и развлечения', 'подарки', 'красота и здоровье', 'квартира', 'образование']
+# Список стандартных категорий доходов
+categ_fin = ['зарплата', 'подарки']
 
 
 markupSG = types.ReplyKeyboardMarkup()
@@ -190,19 +185,24 @@ markupDebt.row('**Назад**')
 markupBank = types.ReplyKeyboardMarkup()
 markupBank.row('**Баланс**','**Перевод**')
 markupBank.row('**Расходы**','**Доходы**')
-markupBank.row('**Новый счет**','**Удалить счет**')
+markupBank.row('**Настройки**')#,'**Бюджет**')
 markupBank.row('**Назад**')
 
+markupSettings = types.ReplyKeyboardMarkup()
+markupSettings.row('**Новый счет**','**Удалить счет**')
+markupSettings.row('**Категории расходов**','**Категории доходов**')
+markupSettings.row('**Назад**')
+
 markupSpend = types.ReplyKeyboardMarkup()
-markupSpend.row('**Расходы за период**')
+markupSpend.row('**Отчет по расходам**')
 markupSpend.row('**Новый расход**','**Редактировать расход**')
-markupSpend.row('**Поменять счет**','**Категории**')
+markupSpend.row('**Поменять счет**')
 markupSpend.row('**Назад**')
 
 markupFin = types.ReplyKeyboardMarkup()
-markupFin.row('**Доходы за период**')
+markupFin.row('**Отчет по доходам**')
 markupFin.row('**Новый доход**','**Редактировать доход**')
-markupFin.row('**Поменять счет**','**Категории**')
+markupFin.row('**Поменять счет**')
 markupFin.row('**Назад**')
 
 markupCat = types.ReplyKeyboardMarkup()
@@ -235,5 +235,5 @@ markupAlice.row('**Активные сессии**')
 markupAlice.row('**Помощь**')
 markupAlice.row('**Назад**')
 
-MUP = {'main_account_alice':markupAlice,'main_account':markupAC,'mainUS':markupUS,'main':markupSG,'main_debt':markupDebt,'main_bank':markupBank,'main_bank_fin_cat':markupCat,'main_bank_spend_cat':markupCat,'main_bank_spend':markupSpend,'main_debt_group':markupG,'main_bank_fin_his':markupSZ,'main_bank_spend_his':markupSZ,'main_bank_fin':markupFin}
+MUP = {'main_account_alice':markupAlice,'main_account':markupAC,'mainUS':markupUS,'main':markupSG,'main_debt':markupDebt,'main_bank':markupBank,'main_bank_settings_cat':markupCat,'main_bank_spend':markupSpend,'main_debt_group':markupG,'main_bank_fin_his':markupSZ,'main_bank_spend_his':markupSZ,'main_bank_fin':markupFin,'main_bank_settings':markupSettings}
 
