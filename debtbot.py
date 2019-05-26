@@ -6,6 +6,7 @@ import time
 import cherrypy
 import os
 from config import *
+from chatbase import Message
 
 ERROR = 0
 logins = [] #все существующие в системе логины
@@ -143,15 +144,204 @@ def prev_step(text):
 def user_db(dat):#база данных для определенного пользователя
     return '/root/debt/users/' + dat + '/data.db'
 
+# Проверка текста, True если есть ошибка
+def check_text(text, tp):
+    if tp == 'rus':
+        for i in text:
+            if (not (i >= 'а' and i <= 'я')) and i != ' ' and i != 'ё':
+                return True
+        return False
+    elif tp == 'rus1':
+        for i in text:
+            if (not (i >= 'а' and i <= 'я')) and i != ' ' and (not (i >= '0' and i <= '9')) and i != 'ё':
+                return True
+        return False
+    elif tp == 'eng1':
+        for i in text:
+            if (not (i >= 'A' and i <= 'Z')) and i != ' ' and (not (i >= '0' and i <= '9')) and (not (i >= 'a' and i <= 'z')):
+                return True
+        return False
+    elif tp == 'ruseng1':
+        for i in text:
+            if (not (i >= 'A' and i <= 'Z')) and i != 'ё' and i != ' ' and (not (i >= '0' and i <= '9')) and (not (i >= 'a' and i <= 'z')) and (not (i >= 'а' and i <= 'я')) and (not (i >= 'А' and i <= 'Я')):
+                return True
+        return False
+
+# Проверка фразы на существование в базе
+def phrase_in(text):
+    conn = sqlite3.connect(db)
+    cur = conn.cursor()
+    cur.execute("SELECT phrase FROM alice")
+    for row in cur:
+        if row[0] == text:
+            return True
+    cur.close()
+    conn.close()
+    return False
+
 loadlogins()
 loadkods()
 
+@bot.message_handler(commands=['admin'])
+def admin(message):
+    mid = message.chat.id
+    if mid == aid:
+        bot.send_message(mid, 'Добро пожаловать! Всего пользователей: ' + str(len(logins)))
+
 # Подключение к Алисе от Яндекса
 @bot.message_handler(commands=['alice'])
-def alice1(message):
+def alice(message):
     mid = message.chat.id
-    bot.send_message(mid, 'В разработке')
+    if users.get(mid) == None:
+        users[mid] = 'mainUS'
+    if users.get(mid) == 'main':
+        users[mid] = 'main_account'
 
+    metrik_id = str(mid)
+    # if kods.get(mid) == None:
+    #     metrik_id = str(mid)
+    # else:
+    #     metrik_id = kods[mid]
+    msg = Message(api_key=metrik_key,
+                  platform="telegram",
+                  user_id=metrik_id,
+                  message="/alice",
+                  intent="bot_"+str(users.get(mid)),
+                  not_handled=False)
+    resp = msg.send()
+    
+    if (users.get(mid) == None) or (users[mid] != 'main_account'):
+        bot.send_message(mid, 'Сначала вам нужно зайти в меню "Аккаунт"')
+        return
+    if ERROR != 0:
+        bot.send_message(mid, 'Проводятся технические работы')
+        return
+    users[mid] += '_alice'
+    conn = sqlite3.connect(db)
+    cur = conn.cursor()
+    cur.execute("SELECT phrase,answer FROM alice WHERE login = '%s'"%(kods[mid]))
+    for row in cur:
+        phrase = row[0]
+        answer = row[1]
+        bot.send_message(mid, 'Ваша фраза: ' + phrase + '\nВаш ответ: ' + answer, reply_markup = MUP[users[mid]])
+        cur.close()
+        conn.close()
+        return
+    keybGR = types.InlineKeyboardMarkup()
+    cbtn1 = types.InlineKeyboardButton(text="Да", callback_data="alice_add_yes")
+    cbtn2 = types.InlineKeyboardButton(text="Нет", callback_data="alice_add_no")
+    keybGR.add(cbtn1, cbtn2)
+    users[mid] += 'add'
+    bot.send_message(mid, 'У вас не задана фраза и ответ. Хотите добавить ее сейчас?', reply_markup = keybGR)
+
+# Добавление новой пары вопрос-ответ 1/2
+def alice_add1(message):
+    mid = message.chat.id
+    text = (message.text).lower()
+    if text == 'отмена':
+        users[mid] = prev_step(users[mid])
+        bot.send_message(mid, 'Выберите дествие', reply_markup = MUP[users[mid]])
+        return
+    if check_text(text, 'rus'):
+        users[mid] = prev_step(users[mid])
+        bot.send_message(mid, 'Используйте только русские буквы (пишите существующие слова) и пробел', reply_markup = MUP[users[mid]])
+        return
+    if phrase_in(text):
+        users[mid] = prev_step(users[mid])
+        bot.send_message(mid, 'К сожалению, данная фраза занята', reply_markup = MUP[users[mid]])
+        return
+    vr[mid] = text
+    sent = bot.send_message(mid, "Напишите фразу-ответ (без знаков препинания)", reply_markup = markupCanc)
+    bot.register_next_step_handler(sent, alice_add2)
+
+# Добавление новой пары вопрос-ответ 2/2
+def alice_add2(message):
+    mid = message.chat.id
+    text = message.text.lower()
+    users[mid] = prev_step(users[mid])
+    if text == 'отмена':
+        bot.send_message(mid, 'Выберите дествие', reply_markup = MUP[users[mid]])
+        return
+    if check_text(text, 'rus'):
+        bot.send_message(mid, 'Используйте только русские буквы (пишите существующие слова) и пробел', reply_markup = MUP[users[mid]])
+        return
+    conn = sqlite3.connect(db)
+    cur = conn.cursor()
+    cur.execute("INSERT INTO alice (login,phrase,answer) VALUES ('%s','%s','%s')"%(kods[mid],vr[mid],text))
+    conn.commit()
+    cur.close()
+    conn.close()
+    users[mid] += '_alice'
+    bot.send_message(mid, 'Успешно добавлено!\nВаша фраза: ' + vr[mid] + '\nВаш ответ: ' + text, reply_markup = MUP[users[mid]])
+
+# Смена фразы-вопроса
+def alice_change1(message):
+    mid = message.chat.id
+    text = (message.text).lower()
+    users[mid] = prev_step(users[mid])
+    if text == 'отмена':
+        bot.send_message(mid, 'Выберите дествие', reply_markup = MUP[users[mid]])
+        return
+    if check_text(text, 'rus'):
+        bot.send_message(mid, 'Используйте только русские буквы (пишите существующие слова) и пробел', reply_markup = MUP[users[mid]])
+        return
+    if phrase_in(text):
+        users[mid] = prev_step(users[mid])
+        bot.send_message(mid, 'К сожалению, данная фраза занята', reply_markup = MUP[users[mid]])
+        return
+    conn = sqlite3.connect(db)
+    cur = conn.cursor()
+    cur.execute("UPDATE alice SET phrase = '%s' WHERE login = '%s'"%(text,kods[mid]))
+    conn.commit()
+    cur.close()
+    conn.close()
+    bot.send_message(mid, 'Успешно изменено!\nВаша фраза: ' + text, reply_markup = MUP[users[mid]])
+
+# Смена фразы-ответа
+def alice_change2(message):
+    mid = message.chat.id
+    text = (message.text).lower()
+    users[mid] = prev_step(users[mid])
+    if text == 'отмена':
+        bot.send_message(mid, 'Выберите дествие', reply_markup = MUP[users[mid]])
+        return
+    if check_text(text, 'rus'):
+        bot.send_message(mid, 'Используйте только русские буквы (пишите существующие слова) и пробел', reply_markup = MUP[users[mid]])
+        return
+    conn = sqlite3.connect(db)
+    cur = conn.cursor()
+    cur.execute("UPDATE alice SET answer = '%s' WHERE login = '%s'"%(text,kods[mid]))
+    conn.commit()
+    cur.close()
+    conn.close()
+    bot.send_message(mid, 'Успешно изменено!\nВаш ответ: ' + text, reply_markup = MUP[users[mid]])
+
+# Аутентификация диалога 
+def alice_auth(message):
+    mid = message.chat.id
+    conn = sqlite3.connect(user_db(kods[mid]))
+    cur = conn.cursor()
+    cur.execute("SELECT id,phrase FROM alice WHERE login = '%s'"%(kods[mid]))
+    for row in cur:
+        keybGR = types.InlineKeyboardMarkup()
+        cbtn1 = types.InlineKeyboardButton(text="Да", callback_data="alice_auth_yes")
+        cbtn2 = types.InlineKeyboardButton(text="Нет", callback_data="alice_auth_no")
+        keybGR.add(cbtn1, cbtn2)
+        vr[mid] = row[0]
+        cur.close()
+        conn.close()
+        bot.send_message(mid, row[1] + '\nАвторизировать данную сессию?', reply_markup = keybGR)
+        return
+    cur.close()
+    conn.close()
+    users[mid] = prev_step(users[mid])
+    bot.send_message(mid, 'Нет диалогов для авторизации', reply_markup = MUP[users[mid]])
+
+@bot.message_handler(commands=['gcheck'])
+def gcheck(message):
+    mid = message.chat.id
+    bot.send_message(mid, users[mid])
+    
 @bot.message_handler(commands=['errors'])
 def errors1(message):
     mid = message.chat.id
@@ -165,8 +355,8 @@ def errors2(message):
     users[mid] = prev_step(users[mid])
     if text == code and ERROR != 0:
         markup1 = types.ReplyKeyboardMarkup()
-        markup1.row('ДА')
-        markup1.row('НЕТ')
+        markup1.row('да')
+        markup1.row('нет')
         LOGS = ''
         sent = bot.send_message(mid, 'ERROR: ' + str(ERROR) + '\n\nЗапустить бота?', reply_markup = markup1)
         users[mid] += '_errors'
@@ -174,8 +364,8 @@ def errors2(message):
     elif text == code and ERROR == 0:
         bot.send_message(mid, users[mid])
         markup1 = types.ReplyKeyboardMarkup()
-        markup1.row('ДА')
-        markup1.row('НЕТ')
+        markup1.row('да')
+        markup1.row('нет')
         sent = bot.send_message(mid, 'Остановить бота?', reply_markup = markup1)
         users[mid] += '_errors'
         bot.register_next_step_handler(sent, errors4)
@@ -186,9 +376,9 @@ def errors3(message):
     global ERROR
     mid = message.chat.id
     text = message.text
-    text = text.upper()
+    text = text.lower()
     users[mid] = prev_step(users[mid])
-    if text == 'ДА':
+    if text == 'да':
         ERROR = 0
         bot.send_message(mid, 'Бот запущен', reply_markup = MUP[users[mid]])
     else:
@@ -198,15 +388,15 @@ def errors4(message):
     global ERROR
     mid = message.chat.id
     text = message.text
-    text = text.upper()
+    text = text.lower()
     users[mid] = prev_step(users[mid])
-    if text == 'ДА':
+    if text == 'да':
         ERROR = 1
         bot.send_message(mid, 'Бот остановлен', reply_markup = MUP[users[mid]])
     else:
         bot.send_message(mid, 'Бот работает', reply_markup = MUP[users[mid]])
 
-@bot.message_handler(commands=['start'])
+@bot.message_handler(commands=['start', 'help'])
 def start(message):
     mid = message.chat.id
     if (users.get(mid) == None):
@@ -220,24 +410,39 @@ def start(message):
 def main(message):
     mid = message.chat.id
     text = message.text
-    text = text.upper()
+    text = text.lower()
+    if (users.get(mid) == None) or (users[mid] == 'mainUS'):
+        users[mid] = 'mainUS'
+
+    metrik_id = str(mid)
+    # if kods.get(mid) == None:
+    #     metrik_id = str(mid)
+    # else:
+    #     metrik_id = kods[mid]
+    msg = Message(api_key=metrik_key,
+                platform="telegram",
+                user_id=metrik_id,
+                message=text,
+                intent="bot_"+str(users.get(mid)),
+                not_handled=False)
+    resp = msg.send()
+
     if ERROR != 0:
         bot.send_message(mid, 'Проводятся технические работы')
         return
-    if (users.get(mid) == None) or (users[mid] == 'mainUS'):
-        users[mid] = 'mainUS'
+    
         
-        if text == 'РЕГИСТРАЦИЯ':
+        if text == 'регистрация':
             sent = bot.send_message(mid, 'Пожалуйста, введите новый логин и пароль через пробел или в два разных сообщения:')
             users[mid] = 'mainUS_reg'
             bot.register_next_step_handler(sent, reg1)
 
-        elif text == 'ВХОД':
+        elif text == 'вход':
             sent = bot.send_message(mid, 'Пожалуйста, введите свой логин и пароль через пробел или в два разных сообщения:')
             users[mid] = 'mainUS_login'
             bot.register_next_step_handler(sent, login1)
 
-        elif text == 'О БОТЕ':
+        elif text == 'о боте':
             start(message)
         
     elif users[mid] == 'main':
@@ -245,64 +450,119 @@ def main(message):
         if kods.get(mid) == None:
             bot.send_message(aid, 'ERROR')
                 
-        elif text == 'О БОТЕ':
+        elif text == 'о боте':
             start(message)
 
-        elif text == 'МОИ ДОЛГИ':
+        elif text == 'мои долги':
             users[mid] = 'main_debt'
             watch_debts(message)
 
-        elif text == 'МОЙ КОШЕЛЕК' or text == 'МОЙ КОШЕЛЁК':
+        elif text == 'мой кошелек' or text == 'мой кошелёк':
             users[mid] = 'main_bank'
             watch_bank(message)
 
-        elif text == 'АККАУНТ':
+        elif text == 'аккаунт':
             users[mid] = 'main_account'
             bot.send_message(mid, 'Что вы хотите сделать?', reply_markup = MUP[users[mid]])
 
     elif users[mid] == 'main_account':
-        if text == 'УДАЛИТЬ АККАУНТ':
+        if text == 'удалить аккаунт':
             bot.send_message(mid, 'В разработке', reply_markup = MUP[users[mid]])####################################################################
 
-        elif text == 'СМЕНА ПАРОЛЯ':
+        elif text == 'смена пароля':
             sent = bot.send_message(mid, 'Введите старый пароль')
             users[mid] = 'main_account_changepass' 
             bot.register_next_step_handler(sent, chngpass1)
 
-        elif text == 'ВЫХОД':
+        elif text == 'выход':
             kods.pop(mid)
             del_kod(mid)
             users[mid] = 'mainUS'
             bot.send_message(mid, 'Выход выполнен', reply_markup = MUP[users[mid]])
 
-        elif text == 'НАЗАД':
+        elif text == 'назад':
+            users[mid] = prev_step(users[mid])
+            bot.send_message(mid, 'Выберите действие', reply_markup = MUP[users[mid]])
+
+        elif text == 'алиса':
+            alice(message)
+
+    elif users[mid] == 'main_account_alice':
+        if text == 'поменять вопрос':
+            users[mid] += '_change'
+            sent = bot.send_message(mid, "Напишите новую фразу-вопрос", reply_markup = markupCanc)
+            bot.register_next_step_handler(sent, alice_change1)
+
+        elif text == 'поменять ответ':
+            users[mid] += '_change'
+            sent = bot.send_message(mid, "Напишите новую фразу-ответ", reply_markup = markupCanc)
+            bot.register_next_step_handler(sent, alice_change2)
+
+        elif text == 'авторизация диалога':
+            users[mid] += '_auth'
+            alice_auth(message)
+
+        elif text == 'активные сессии':
+            kol = 0
+            stroka = "Количество активных сессий: "
+            conn = sqlite3.connect(db)
+            cur = conn.cursor()
+            cur.execute("SELECT id FROM zalog_alice WHERE login = '%s'"%(kods[mid]))
+            for row in cur:
+                kol += 1
+            cur.close()
+            conn.close()
+            if kol == 0:
+                stroka = "Нет активных сессий"
+                bot.send_message(mid, stroka, reply_markup = MUP[users[mid]])
+            else:
+                stroka += str(kol) + "\nОтключить все активные сессии?"
+                keybGR = types.InlineKeyboardMarkup()
+                cbtn1 = types.InlineKeyboardButton(text="Да", callback_data="alice_deauth_yes")
+                cbtn2 = types.InlineKeyboardButton(text="Нет", callback_data="alice_deauth_no")
+                keybGR.add(cbtn1, cbtn2)
+                users[mid] += '_deauth'
+                bot.send_message(mid, stroka, reply_markup = keybGR)
+                
+
+        elif text == 'помощь':
+            bot.send_message(mid, """
+Итак, вы должны сказать кодовую фразу-вопрос Алисе. Она должна понять вас и сказать вашу фразу-ответ.
+После этого вы опять долны сказать Алисе какую-то фразу, которую она отправит сюда.
+Далее вы нажимаете на книпку "Авторизация диалога". Он присылает вам фразу.
+Если фраза совпадает с той, что вы сказали Алисе, то вам нужно нажать кнопку "Да" и все заработает!
+Теперь вы можете пользоваться ботом через Алису!
+Удачи!
+            """, reply_markup = MUP[users[mid]])
+
+        elif text == 'назад':
             users[mid] = prev_step(users[mid])
             bot.send_message(mid, 'Выберите действие', reply_markup = MUP[users[mid]])
 
     elif users[mid] == 'main_debt':
 
-        if text == 'ДОБАВИТЬ ДОЛГ':
+        if text == 'добавить долг':
             vr[mid] = []
             markup1 = types.ReplyKeyboardMarkup()
-            markup1.row('ОТМЕНА')
+            markup1.row('Отмена')
             conn = sqlite3.connect(user_db(kods[mid]))
             cur = conn.cursor()
             cur.execute("SELECT name FROM bank WHERE login = '%s'"%(kods[mid]))
             for row in cur:
                 markup1.row(row[0])
-                vr[mid].append(row[0].upper())
+                vr[mid].append(row[0].lower())
             cur.close()
             conn.close()
             sent = bot.send_message(mid, 'Выберите счет, с которого вы даете долг', reply_markup = markup1)
             users[mid] = 'main_debt_add'
             bot.register_next_step_handler(sent, addcredit1)
 
-        elif text == 'МОИ ДОЛГИ':
+        elif text == 'мои долги':
             watch_debts(message)
 
-        elif text == 'РЕДАКТИРОВАТЬ':
+        elif text == 'редактировать':
             markup1 = types.ReplyKeyboardMarkup()
-            markup1.row('ОТМЕНА')
+            markup1.row('Отмена')
             conn = sqlite3.connect(user_db(kods[mid]))
             cur = conn.cursor()
             cur.execute("SELECT cred FROM credits WHERE login = '%s'"%(kods[mid]))
@@ -310,11 +570,16 @@ def main(message):
                 markup1.row(row[0])
             cur.close()
             conn.close()
-            sent = bot.send_message(mid, 'Введите фамилию и имя должника, у которого хотите изменить долг или ОТМЕНА', reply_markup = markup1)
+            sent = bot.send_message(mid, 'Введите фамилию и имя должника, у которого хотите изменить долг или отмена', reply_markup = markup1)
             users[mid] = 'main_debt_edit'
             bot.register_next_step_handler(sent, edit1)
 
-        elif text == 'МОИ ГРУППЫ':
+        elif text == 'назад':
+            users[mid] = prev_step(users[mid])
+            bot.send_message(mid, 'Выберите действие', reply_markup = MUP[users[mid]])
+
+        elif text == 'мои группы':
+            return
             bot.send_message(mid, "Данная функция пока недоступна", reply_markup = MUP[users[mid]])###########################################################
             return
             stroka = ""
@@ -338,34 +603,30 @@ def main(message):
             users[mid] = 'main_debt_group'
             bot.register_next_step_handler(sent, group1)
 
-        elif text == 'НАЗАД':
-            users[mid] = prev_step(users[mid])
-            bot.send_message(mid, 'Выберите действие', reply_markup = MUP[users[mid]])
-
     elif users[mid] == 'main_bank':
 
-        if text == 'НАЗАД':
+        if text == 'назад':
             users[mid] = prev_step(users[mid])
             bot.send_message(mid, 'Выберите действие', reply_markup = MUP[users[mid]])
 
-        elif text == 'МОИ СЧЕТА':
+        elif text == 'баланс':
             watch_bank(message)
 
-        elif text == 'ДОХОДЫ':
+        elif text == 'доходы':
             catg[kods[mid]] = 'fin'
             bank_fin(mid)
             
-        elif text == 'РАСХОДЫ':
+        elif text == 'расходы':
             catg[kods[mid]] = 'spend'
             bank_fin(mid)
 
-        elif text == 'НОВЫЙ СЧЕТ':
+        elif text == 'новый счет':
             new_bank(mid)
 
-        elif text == 'УДАЛИТЬ СЧЕТ':
+        elif text == 'удалить счет':
             kol = 0
             markup1 = types.ReplyKeyboardMarkup()
-            markup1.row('ОТМЕНА')
+            markup1.row('Отмена')
             conn = sqlite3.connect(user_db(kods[mid]))
             cur = conn.cursor()
             cur.execute("SELECT name, bal FROM bank WHERE login = '%s'"%(kods[mid]))
@@ -378,13 +639,13 @@ def main(message):
                 bot.send_message(mid, 'У вас нет счетов', reply_markup = MUP[users[mid]])
                 return
             users[mid] = 'main_bank_del'
-            sent = bot.send_message(mid, 'Выберите счет, который хотите удалить или ОТМЕНА', reply_markup = markup1)
+            sent = bot.send_message(mid, 'Выберите счет, который хотите удалить или отмена', reply_markup = markup1)
             bot.register_next_step_handler(sent, bank_del)
 
-        elif text == 'ПЕРЕВОД':
+        elif text == 'перевод':
             kol = 0
             markup1 = types.ReplyKeyboardMarkup()
-            markup1.row('ОТМЕНА')
+            markup1.row('Отмена')
             conn = sqlite3.connect(user_db(kods[mid]))
             cur = conn.cursor()
             vr[mid] = []
@@ -395,12 +656,12 @@ def main(message):
             cur.execute("SELECT name, bal FROM bank WHERE login = '%s'"%(kods[mid]))
             for row in cur:
                 kol += 1
-                vr1[mid].append(row[0].upper())
+                vr1[mid].append(row[0].lower())
                 vr4[mid].append(row[0])
                 vr3[mid].append(row[1])
                 if row[1] > 0:		
                     markup1.row(row[0])
-                    vr[mid].append(row[0].upper())
+                    vr[mid].append(row[0].lower())
                     vr2[mid].append(row[1])
             cur.close()
             conn.close()
@@ -413,17 +674,17 @@ def main(message):
 
     elif users[mid] == 'main_bank_spend' or users[mid] == 'main_bank_fin':
 
-        if text == 'НАЗАД':
+        if text == 'назад':
             users[mid] = prev_step(users[mid])
             bot.send_message(mid, 'Выберите действие', reply_markup = MUP[users[mid]])
 
-        elif text == 'НОВЫЙ РАСХОД' or text == 'НОВЫЙ ДОХОД':
-            if spend[mid] == 'ВСЕ':
+        elif text == 'новый расход' or text == 'новый доход':
+            if spend[mid] == 'все':
                 bot.send_message(mid, "Сначала поменяйте счет", reply_markup = MUP[users[mid]])
                 return
             kol = 0
             markup1 = types.ReplyKeyboardMarkup()
-            markup1.row('ОТМЕНА')
+            markup1.row('Отмена')
             vr[mid] = []
             conn = sqlite3.connect(user_db(kods[mid]))
             cur = conn.cursor()
@@ -434,7 +695,7 @@ def main(message):
             for row in cur:
                 kol += 1
                 markup1.row(row[0])
-                vr[mid].append(row[0].upper())
+                vr[mid].append(row[0].lower())
             cur.close()
             conn.close()
             if kol == 0:
@@ -444,10 +705,10 @@ def main(message):
             sent = bot.send_message(mid, "Выберите категорию\nТекущий счет: " + spend[mid], reply_markup = markup1)
             bot.register_next_step_handler(sent, bank_fin_add1)
             
-        elif text == 'РАСХОДЫ ЗА ПЕРИОД' or text == 'ДОХОДЫ ЗА ПЕРИОД':
+        elif text == 'расходы за период' or text == 'доходы за период':
             users[mid] += '_his'
             markup1 = types.ReplyKeyboardMarkup()
-            markup1.row('ВСЕ')
+            markup1.row('все')
             vr[mid] = []
             conn = sqlite3.connect(user_db(kods[mid]))
             cur = conn.cursor()
@@ -457,39 +718,39 @@ def main(message):
                 cur.execute("SELECT cat FROM fcats WHERE login = '%s'"%(kods[mid]))
             for row in cur:
                 markup1.row(row[0])
-                vr[mid].append(row[0].upper())
+                vr[mid].append(row[0].lower())
             cur.close()
             conn.close()
             sent = bot.send_message(mid, 'Выберите категорию', reply_markup = markup1)
             bot.register_next_step_handler(sent, bank_fin_his1)
                         
-        elif text == 'ПОМЕНЯТЬ СЧЕТ':
+        elif text == 'поменять счет':
             users[mid] += '_change'
             markup1 = types.ReplyKeyboardMarkup()
-            markup1.row('ВСЕ')
+            markup1.row('все')
             conn = sqlite3.connect(user_db(kods[mid]))
             cur = conn.cursor()
             cur.execute("SELECT name FROM bank WHERE login = '%s'"%(kods[mid]))
             vr[mid] = []
             for row in cur:
                 markup1.row(row[0])
-                vr[mid].append(row[0].upper())
+                vr[mid].append(row[0].lower())
             cur.close()
             conn.close()
             sent = bot.send_message(mid, 'Выберите другой счет', reply_markup = markup1)
             bot.register_next_step_handler(sent, bank_change)
 
-        elif text == 'КАТЕГОРИИ':
+        elif text == 'категории':
             users[mid] += '_cat'
             watch_cat(mid)
 
-        elif text == 'РЕДАКТИРОВАТЬ РАСХОД' or text == 'РЕДАКТИРОВАТЬ ДОХОД':
-            if spend[mid] == 'ВСЕ':
+        elif text == 'редактировать расход' or text == 'редактировать доход':
+            if spend[mid] == 'все':
                 bot.send_message(mid, "Сначала поменяйте счет", reply_markup = MUP[users[mid]])
                 return
             kol = 0
             markup1 = types.ReplyKeyboardMarkup()
-            markup1.row('ОТМЕНА')
+            markup1.row('Отмена')
             vr[mid] = []
             conn = sqlite3.connect(user_db(kods[mid]))
             cur = conn.cursor()
@@ -500,7 +761,7 @@ def main(message):
             for row in cur:
                 kol += 1
                 markup1.row(row[0])
-                vr[mid].append(row[0].upper())
+                vr[mid].append(row[0].lower())
             cur.close()
             conn.close()
             if kol == 0:
@@ -512,19 +773,19 @@ def main(message):
 
     elif users[mid] == 'main_bank_spend_cat' or users[mid] == 'main_bank_fin_cat':
 
-        if text == 'НАЗАД':
+        if text == 'назад':
             users[mid] = prev_step(users[mid])
             bot.send_message(mid, 'Выберите действие', reply_markup = MUP[users[mid]])
 
-        elif text == 'ДОБАВИТЬ':
+        elif text == 'добавить':
             users[mid] += '_add'
             sent = bot.send_message(mid, 'Введите название новой категории', reply_markup = markupCanc)
             bot.register_next_step_handler(sent, bank_fin_cat_add)
 
-        elif text == 'УДАЛИТЬ':
+        elif text == 'удалить':
             kol = 0
             markup1 = types.ReplyKeyboardMarkup()
-            markup1.row('ОТМЕНА')
+            markup1.row('Отмена')
             vr[mid] = []
             conn = sqlite3.connect(user_db(kods[mid]))
             cur = conn.cursor()
@@ -534,7 +795,7 @@ def main(message):
                 cur.execute("SELECT cat FROM fcats WHERE login = '%s'"%(kods[mid]))
             for row in cur:
                 markup1.row(row[0])
-                vr[mid].append(row[0].upper())
+                vr[mid].append(row[0].lower())
                 kol += 1
             cur.close()
             conn.close()
@@ -545,7 +806,7 @@ def main(message):
             sent = bot.send_message(mid, 'Внимание! Пока в истории есть операции с этой категорией, удаление невозможно.\nВыберите категорию, которую хотите удалить', reply_markup = markup1)
             bot.register_next_step_handler(sent, bank_fin_cat_del)
 
-        elif text == 'КАТЕГОРИИ':
+        elif text == 'категории':
             watch_cat(mid)
 
 """
@@ -622,6 +883,7 @@ def reg1(message):
         cur.execute("CREATE TABLE groups (login TEXT, name TEXT, kol INTEGER, pep TEXT)")
         cur.execute("CREATE TABLE inc (login TEXT, year INTEGER, month INTEGER, day INTEGER, cat TEXT, bank TEXT, name TEXT, sum REAL)")
         cur.execute("CREATE TABLE spend (login TEXT, year INTEGER, month INTEGER, day INTEGER, cat TEXT, bank TEXT, name TEXT, sum REAL)")
+        cur.execute("CREATE TABLE alice (id TEXT, phrase TEXT, login TEXT)")
         cur.close()
         conn.close()
         
@@ -659,6 +921,7 @@ def reg2(message):
     cur.execute("CREATE TABLE groups (login TEXT, name TEXT, kol INTEGER, pep TEXT)")
     cur.execute("CREATE TABLE inc (login TEXT, year INTEGER, month INTEGER, day INTEGER, cat TEXT, bank TEXT, name TEXT, sum REAL)")
     cur.execute("CREATE TABLE spend (login TEXT, year INTEGER, month INTEGER, day INTEGER, cat TEXT, bank TEXT, name TEXT, sum REAL)")
+    cur.execute("CREATE TABLE alice (id TEXT, phrase TEXT)")
     cur.close()
     conn.close()
     
@@ -764,11 +1027,15 @@ def chngpass1(message):
 
 # Смена пароля 2/2
 def chngpass2(message):
-    text = message.text
+    pas = message.text
     users[mid] = prev_step(users[mid])
+    for i in range(len(pas)):
+        if ((pas[i]<'a' or pas[i]>'z') and (pas[i]<'0' or pas[i]>'9') and (pas[i]<'A' or pas[i]>'Z')):
+            bot.send_message(mid, 'Некорректный ввод. Используйте только символы a..z, A..Z или цифры для пароля')
+            return
     conn = sqlite3.connect(db)
     cur = conn.cursor()
-    cur.execute("UPDATE users SET password = '%s' WHERE login = '%s'"%(text,kods[mid]))
+    cur.execute("UPDATE users SET password = '%s' WHERE login = '%s'"%(pas,kods[mid]))
     conn.commit()
     cur.close()
     conn.close()
@@ -778,11 +1045,12 @@ def chngpass2(message):
 def addcredit1(message):
     mid = message.chat.id
     text = message.text
+    text = text.lower()
     users[mid] = prev_step(users[mid])
-    if text == 'ОТМЕНА':
+    if text == 'отмена':
         bot.send_message(mid, 'Выберите действие', reply_markup = MUP[users[mid]])
         return
-    if text.upper() not in vr[mid]:
+    if text not in vr[mid]:
         bot.send_message(mid, 'Такого счета нет', reply_markup = MUP[users[mid]])
         return
     vr[mid] = text
@@ -795,7 +1063,7 @@ def addcredit2(message):
     mid = message.chat.id
     text = message.text
     users[mid] = prev_step(users[mid])
-    if text != 'ОТМЕНА':
+    if text != 'отмена':
         try:
             fam, im, dolg = text.split()
             dolg = round(float(check_num(dolg)),2)
@@ -804,11 +1072,14 @@ def addcredit2(message):
         except Exception:
             bot.send_message(mid, 'Некорректный ввод', reply_markup = MUP[users[mid]])
             return
+        if check_text(fam.lower(), 'rus'):
+            bot.send_message(mid, 'Используйте только русские буквы', reply_markup = MUP[users[mid]])
+            return
         conn = sqlite3.connect(user_db(kods[mid]))
         cur = conn.cursor()
         cur.execute("SELECT cred, sz FROM credits WHERE login = '%s'"%(kods[mid]))
         for row in cur:
-            if (row[0] == fam) or (row[0] == im):
+            if (row[0].lower() == fam.lower()) or (row[0].lower() == im.lower()):
                 bot.send_message(mid, 'Данный участник уже есть в базе. Пожалуйста, воспользуйтесь командой РЕДАКТИРОВАТЬ для изменения размера долга', reply_markup = MUP[users[mid]])
                 cur.close()
                 conn.close()
@@ -837,7 +1108,7 @@ def edit1(message):
     text = message.text
     mid = message.chat.id
     users[mid] = prev_step(users[mid])
-    if text == 'ОТМЕНА':
+    if text == 'отмена':
         bot.send_message(mid, 'Выберите действие', reply_markup = MUP[users[mid]])
         return
     try:
@@ -848,13 +1119,13 @@ def edit1(message):
     vr[mid] = fam + ' ' + im
     vr1[mid] = []
     markup1 = types.ReplyKeyboardMarkup()
-    markup1.row('ОТМЕНА')
+    markup1.row('Отмена')
     conn = sqlite3.connect(user_db(kods[mid]))
     cur = conn.cursor()
     cur.execute("SELECT name FROM bank WHERE login = '%s'"%(kods[mid]))
     for row in cur:
         markup1.row(row[0])
-        vr1[mid].append(row[0].upper())
+        vr1[mid].append(row[0].lower())
     cur.close()
     conn.close()
     sent = bot.send_message(mid, 'Выберите счет, на который будут положены деньги', reply_markup = markup1)
@@ -863,18 +1134,18 @@ def edit1(message):
     
 # Редактирование долгов 2/3
 def edit2(message):
-    text = message.text
+    text = message.text.lower()
     mid = message.chat.id
     users[mid] = prev_step(users[mid])
-    if text == 'ОТМЕНА':
+    if text == 'отмена':
         bot.send_message(mid, 'Выберите действие', reply_markup = MUP[users[mid]])
         return
-    if text.upper() not in vr1[mid]:
+    if text.lower() not in vr1[mid]:
         bot.send_message(mid, 'Такого счета нет', reply_markup = MUP[users[mid]])
         return
     vr1[mid] = text
     markup1 = types.ReplyKeyboardMarkup()
-    markup1.row('ОТМЕНА')
+    markup1.row('Отмена')
     conn = sqlite3.connect(user_db(kods[mid]))
     cur = conn.cursor()
     cur.execute("SELECT sz FROM credits WHERE cred = '%s' AND login = '%s'"%(vr[mid],kods[mid]))
@@ -891,7 +1162,7 @@ def edit3(message):
     text = message.text
     mid = message.chat.id
     users[mid] = prev_step(users[mid])
-    if text != 'ОТМЕНА':
+    if text != 'отмена':
         fam, im = vr[mid].split()
         fam, im = fam + ' ' + im, im + ' ' + fam
         vr.pop(mid)
@@ -952,12 +1223,12 @@ def edit3(message):
 def group1(message):
     text = message.text
     mid = message.chat.id
-    text = text.upper()
+    text = text.lower()
     users[mid] = prev_step(users[mid])
     if text != 'НАЗАД':
         if text == 'ДОБАВИТЬ ГРУППУ':
             markup1 = types.ReplyKeyboardMarkup()
-            markup1.row('ОТМЕНА')
+            markup1.row('Отмена')
             sent =bot.send_message(mid, 'Введите название группы', reply_markup = markup1)
             users[mid] = 'main_debt_group_add'
             bot.register_next_step_handler(sent, group2)
@@ -967,7 +1238,7 @@ def group1(message):
             cur = conn.cursor()
             cur.execute("SELECT name,kol,pep FROM groups WHERE login = '%s'"%(kods[mid]))
             for row in cur:
-                if text.upper() == row[0].upper():
+                if text.lower() == row[0].lower():
                     stroka = row[0] + '\nКоличество людей: ' + str(row[1]) + '\n' + row[2] + '\n\nВыберите действие'
                     users[mid] = 'main_debt_group_opr'
                     sent = bot.send_message(mid, stroka, reply_markup = MUP[users[mid]])
@@ -986,14 +1257,14 @@ def group1(message):
 def group2(message):
     text = message.text
     mid = message.chat.id
-    text1 = text.upper()
+    text1 = text.lower()
     users[mid] = prev_step(users[mid])
-    if text != 'ОТМЕНА':
+    if text != 'отмена':
         conn = sqlite3.connect(user_db(kods[mid]))
         cur = conn.cursor()
         cur.execute("SELECT name FROM groups WHERE login = '%s'"%(kods[mid]))
         for row in cur:
-            if text1 == row[0].upper():
+            if text1 == row[0].lower():
                 bot.send_message(mid, 'Данная группа уже есть', reply_markup = MUP[users[mid]])
                 cur.close()
                 conn.close()
@@ -1002,7 +1273,7 @@ def group2(message):
         conn.close()
         vr[mid] = text
         markup1 = types.ReplyKeyboardMarkup()
-        markup1.row('ОТМЕНА')
+        markup1.row('Отмена')
         sent = bot.send_message(mid, 'Введите участников группы (имя и фамилия через пробел) в разных строчках', reply_markup = markup1)
         users[mid] = 'main_debt_group_add'
         bot.register_next_step_handler(sent, group3)
@@ -1014,7 +1285,7 @@ def group3(message):
     text = message.text
     mid = message.chat.id
     users[mid] = prev_step(users[mid])
-    if text != 'ОТМЕНА':
+    if text != 'отмена':
         text1 = text.split('\n')
         i = 0
         for row in text1:
@@ -1041,16 +1312,16 @@ def group4(message):
     text = message.text
     mid = message.chat.id
     users[mid] = prev_step(users[mid])
-    if text.upper() == 'МЕНЮ':
+    if text.lower() == 'МЕНЮ':
         bot.send_message(mid, 'Вот меню:', reply_markup = MUP[users[mid]])
-    elif text.upper() == 'УДАЛИТЬ ГРУППУ':
+    elif text.lower() == 'УДАЛИТЬ ГРУППУ':
         keybGR = types.InlineKeyboardMarkup()
         cbtn1 = types.InlineKeyboardButton(text="Да", callback_data="gr_del_yes")
         cbtn2 = types.InlineKeyboardButton(text="Нет", callback_data="gr_del_no")
         keybGR.add(cbtn1, cbtn2)
         users[mid] = 'main_debt_group_del'
         bot.send_message(mid, 'Удалить группу "' + vr[mid] + '"?', reply_markup = keybGR)
-    elif text.upper() == 'ДОБАВИТЬ ДОЛГ':
+    elif text.lower() == 'ДОБАВИТЬ ДОЛГ':
         keybGR = types.InlineKeyboardMarkup()
         cbtn1 = types.InlineKeyboardButton(text="Добавить", callback_data="gr_yes")
         cbtn2 = types.InlineKeyboardButton(text="Оставить", callback_data="gr_no")
@@ -1064,7 +1335,7 @@ def group4(message):
 def group5(message):
     text = message.text
     mid = message.chat.id
-    if text != 'ОТМЕНА':
+    if text != 'отмена':
         try:
             text = round(float(check_num(text)),2)
         except Exception:
@@ -1119,7 +1390,7 @@ def group5(message):
 def group6(message):
     text = message.text
     mid = message.chat.id
-    if text != 'ОТМЕНА':
+    if text != 'отмена':
         try:
             text = round(float(check_num(text)),2)
         except Exception:
@@ -1215,29 +1486,32 @@ def bank_add1(message):
     mid = message.chat.id
     text = message.text
     users[mid] = prev_step(users[mid])
-    if text.upper() == 'ОТМЕНА':
+    if text.lower() == 'отмена':
         bot.send_message(mid, 'Выберите действие', reply_markup = MUP[users[mid]])
         return
-    if text.upper() == 'ВСЕ':
+    if text.lower() == 'все':
         bot.send_message(mid, 'Пожалуйста, выберите другое имя', reply_markup = MUP[users[mid]])
         return
     if len(text) > 32:
         bot.send_message(mid, 'Слишком длинное название', reply_markup = MUP[users[mid]])
         return
+    if check_text(text.lower(), 'rus1'):
+        bot.send_message(mid, 'Используйте только русские буквы, пробел или цифры', reply_markup = MUP[users[mid]])
+        return
     conn = sqlite3.connect(user_db(kods[mid]))
     cur = conn.cursor()
     cur.execute("SELECT name FROM bank WHERE login = '%s'"%(kods[mid]))
     for row in cur:
-        if row[0].upper() == text.upper():
+        if row[0].lower() == text.lower():
             bot.send_message(mid, 'Данный счет уже есть в базе', reply_markup = MUP[users[mid]])
             cur.close()
             conn.close()
             return
     cur.close()
     conn.close()
-    vr[mid] = text
+    vr[mid] = text.lower()
     markup1 = types.ReplyKeyboardMarkup()
-    markup1.row('ОТМЕНА')
+    markup1.row('Отмена')
     markup1.row('0')
     sent = bot.send_message(mid, 'Введите начальный баланс счета', reply_markup = markup1)
     users[mid] = 'main_bank_add'
@@ -1248,7 +1522,7 @@ def bank_add2(message):
     mid = message.chat.id
     text = message.text
     users[mid] = prev_step(users[mid])
-    if text.upper() == 'ОТМЕНА':
+    if text.lower() == 'отмена':
         bot.send_message(mid, 'Выберите действие', reply_markup = MUP[users[mid]])
         return
     if text[0] == '-':
@@ -1270,9 +1544,9 @@ def bank_add2(message):
 # Удаление счета
 def bank_del(message):
     mid = message.chat.id
-    text = message.text
+    text = message.text.lower()
     users[mid] = prev_step(users[mid])
-    if text == 'ОТМЕНА':
+    if text == 'отмена':
         bot.send_message(mid, 'Выберите действие', reply_markup = MUP[users[mid]])
         return
     conn = sqlite3.connect(user_db(kods[mid]))
@@ -1281,21 +1555,35 @@ def bank_del(message):
     kod = 1
     for row in cur:
         kod = 0
-    cur.close()
-    conn.close()
     if kod == 1:
         bot.send_message(mid, 'Данного счета не существует', reply_markup = MUP[users[mid]])
+        cur.close()
+        conn.close()
         return
-    if text.upper() == spend[mid].upper():
+    cur.execute("SELECT bank FROM spend WHERE bank = '%s'"%(text))
+    for row in cur:
+        bot.send_message(mid, 'Сначала необходимо удалить операции с данным счетом', reply_markup = MUP[users[mid]])
+        cur.close()
+        conn.close()
+        return
+    cur.execute("SELECT bank FROM inc WHERE bank = '%s'"%(text))
+    for row in cur:
+        bot.send_message(mid, 'Сначала необходимо удалить операции с данным счетом', reply_markup = MUP[users[mid]])
+        cur.close()
+        conn.close()
+        return
+    cur.close()
+    conn.close()    
+    if text.lower() == spend[mid].lower():
         bot.send_message(mid, 'Сначала выберите другой счет', reply_markup = MUP[users[mid]])
         return
+    users[mid] = 'main_bank_del'
     vr[mid] = text
     keybGR = types.InlineKeyboardMarkup()
     cbtn1 = types.InlineKeyboardButton(text="Да", callback_data="bank_del_yes")
     cbtn2 = types.InlineKeyboardButton(text="Нет", callback_data="bank_del_no")
     keybGR.add(cbtn1, cbtn2)
     bot.send_message(mid, 'Вы уверены, что хотите удалить счет? Его баланс будет удален!', reply_markup = keybGR)
-    users[mid] = 'main_bank_del'
 
 # Главная расходы/доходы
 def bank_fin(mid):
@@ -1312,7 +1600,7 @@ def bank_fin(mid):
         return
     users[mid] += '_' + catg[kods[mid]]
     if spend.get(mid) == None:
-        spend[mid] = 'ВСЕ'
+        spend[mid] = 'все'
     bot.send_message(mid, "Выберите действие. Текущий счет: " + spend[mid], reply_markup = MUP[users[mid]])
 
 # Смена счета
@@ -1320,10 +1608,10 @@ def bank_change(message):
     mid = message.chat.id
     text = message.text
     users[mid] = prev_step(users[mid])
-    if text == 'ВСЕ':
-        spend[mid] = 'ВСЕ'
+    if text == 'все':
+        spend[mid] = 'все'
         bot.send_message(mid, "Выбраны все счета", reply_markup = MUP[users[mid]])
-    elif text.upper() not in vr[mid]:
+    elif text.lower() not in vr[mid]:
         bot.send_message(mid, "Такого счета нет", reply_markup = MUP[users[mid]])
     else:
         spend[mid] = text
@@ -1354,12 +1642,16 @@ def watch_cat(mid):
 def bank_fin_cat_add(message):
     mid = message.chat.id
     text = message.text
+    text = text.lower()
     users[mid] = prev_step(users[mid])
-    if text.upper() == 'ОТМЕНА':
+    if text.lower() == 'отмена':
         bot.send_message(mid, "Выберите действие", reply_markup = MUP[users[mid]])
         return
-    if text.upper() == 'ВСЕ':
+    if text.lower() == 'все':
         bot.send_message(mid, "Данное имя выбрать невозможно", reply_markup = MUP[users[mid]])
+        return
+    if check_text(text.lower(), 'rus1'):
+        bot.send_message(mid, 'Используйте только русские буквы, пробел или цифры', reply_markup = MUP[users[mid]])
         return
     conn = sqlite3.connect(user_db(kods[mid]))
     cur = conn.cursor()
@@ -1368,7 +1660,7 @@ def bank_fin_cat_add(message):
     elif catg[kods[mid]] == 'fin':
         cur.execute("SELECT cat FROM fcats WHERE login = '%s'"%(kods[mid]))
     for row in cur:
-        if row[0].upper() == text.upper():
+        if row[0].lower() == text.lower():
             bot.send_message(mid, "Данная категория уже существует", reply_markup = MUP[users[mid]])
             cur.close()
             conn.close()
@@ -1387,10 +1679,10 @@ def bank_fin_cat_del(message):
     mid = message.chat.id
     text = message.text
     users[mid] = prev_step(users[mid])
-    if text == 'ОТМЕНА':
+    if text == 'отмена':
         bot.send_message(mid, "Выберите действие", reply_markup = MUP[users[mid]])
         return
-    if text.upper() not in vr[mid]:
+    if text.lower() not in vr[mid]:
         bot.send_message(mid, "Такой категории нет", reply_markup = MUP[users[mid]])
         return
     conn = sqlite3.connect(user_db(kods[mid]))
@@ -1400,7 +1692,7 @@ def bank_fin_cat_del(message):
     elif catg[kods[mid]] == 'fin':
         cur.execute("SELECT cat FROM inc WHERE login = '%s'"%(kods[mid]))
     for row in cur:
-        if row[0].upper() == text.upper():
+        if row[0].lower() == text.lower():
             bot.send_message(mid, "Данная категория используется, удаление невозможно", reply_markup = MUP[users[mid]])
             cur.close()
             conn.close()
@@ -1419,7 +1711,7 @@ def bank_fin_his1(message):
     mid = message.chat.id
     text = message.text
     users[mid] = prev_step(users[mid])
-    if text.upper() not in vr[mid] and text.upper() != 'ВСЕ':
+    if text.lower() not in vr[mid] and text.lower() != 'все':
         bot.send_message(mid, "Такой категории нет", reply_markup = MUP[users[mid]])
         return
     vr[mid] = text
@@ -1431,14 +1723,14 @@ def bank_fin_his1(message):
 def bank_fin_his2(message):
     mid = message.chat.id
     text = message.text
-    text = text.upper()
+    text = text.lower()
     tm = tday()
     users[mid] = prev_step(users[mid])
-    if text == 'ОТМЕНА':
+    if text == 'отмена':
         bot.send_message(mid, "Выберите действие", reply_markup = MUP[users[mid]])
         vr.pop(mid)
         return
-    if text == 'СЕГОДНЯ':
+    if text == 'сегодня':
         sday = int(tm[0])
         fday = int(tm[0])
         smon = int(tm[1])
@@ -1446,7 +1738,7 @@ def bank_fin_his2(message):
         syear = int(tm[2])
         fyear = int(tm[2])
         
-    elif text == 'ВЧЕРА':
+    elif text == 'вчера':
         tm = lday()
         sday = int(tm[0])
         fday = int(tm[0])
@@ -1455,7 +1747,7 @@ def bank_fin_his2(message):
         syear = int(tm[2])
         fyear = int(tm[2])
         
-    elif text == 'ЭТОТ МЕСЯЦ':
+    elif text == 'этот месяц':
         sday = 1
         fday = int(tm[0])
         smon = int(tm[1])
@@ -1463,7 +1755,7 @@ def bank_fin_his2(message):
         syear = int(tm[2])
         fyear = int(tm[2])
 
-    elif text == 'ПРОШЛЫЙ МЕСЯЦ':
+    elif text == 'прошлый месяц':
         tm = lmon()
         sday = 1
         fday = 31
@@ -1526,9 +1818,9 @@ def bank_fin_his2(message):
         stroka = "Ваши расходы с " + str(sday) + "." + str(smon) + "." + str(syear) + ' по ' + str(fday) + "." + str(fmon) + "." + str(fyear) + "\n"
     elif catg[kods[mid]] == 'fin':
         stroka = "Ваши доходы с " + str(sday) + "." + str(smon) + "." + str(syear) + ' по ' + str(fday) + "." + str(fmon) + "." + str(fyear) + "\n"
-    if spend[mid] != 'ВСЕ':
+    if spend[mid] != 'все':
         stroka += "Счет: " + spend[mid] + "\n"
-    if vr[mid] != 'ВСЕ':
+    if vr[mid] != 'все':
         stroka += "Категория: " + vr[mid] + "\n"
     stroka += "\n"
     year = syear
@@ -1540,22 +1832,22 @@ def bank_fin_his2(message):
     kol1 = 0
     cat_s = dict()
     while kod == 0:
-        if spend[mid] == 'ВСЕ' and vr[mid] == 'ВСЕ':
+        if spend[mid] == 'все' and vr[mid] == 'все':
             if catg[kods[mid]] == 'spend':
                 cur.execute("SELECT name, sum, cat, bank FROM spend WHERE login = '%s' AND year = '%d' AND month = '%d' AND day = '%d'"%(kods[mid],year,mon,day))
             elif catg[kods[mid]] == 'fin':
                 cur.execute("SELECT name, sum, cat, bank FROM inc WHERE login = '%s' AND year = '%d' AND month = '%d' AND day = '%d'"%(kods[mid],year,mon,day))
-        elif spend[mid] != 'ВСЕ' and vr[mid] == 'ВСЕ':
+        elif spend[mid] != 'все' and vr[mid] == 'все':
             if catg[kods[mid]] == 'spend':
                 cur.execute("SELECT name, sum, cat, bank FROM spend WHERE login = '%s' AND year = '%d' AND month = '%d' AND day = '%d' AND bank = '%s'"%(kods[mid],year,mon,day,spend[mid]))
             elif catg[kods[mid]] == 'fin':
                 cur.execute("SELECT name, sum, cat, bank FROM inc WHERE login = '%s' AND year = '%d' AND month = '%d' AND day = '%d' AND bank = '%s'"%(kods[mid],year,mon,day,spend[mid]))
-        elif spend[mid] == 'ВСЕ' and vr[mid] != 'ВСЕ':
+        elif spend[mid] == 'все' and vr[mid] != 'все':
             if catg[kods[mid]] == 'spend':
                 cur.execute("SELECT name, sum, cat, bank FROM spend WHERE login = '%s' AND year = '%d' AND month = '%d' AND day = '%d' AND cat = '%s'"%(kods[mid],year,mon,day,vr[mid]))
             elif catg[kods[mid]] == 'fin':
                 cur.execute("SELECT name, sum, cat, bank FROM inc WHERE login = '%s' AND year = '%d' AND month = '%d' AND day = '%d' AND cat = '%s'"%(kods[mid],year,mon,day,vr[mid]))
-        elif spend[mid] != 'ВСЕ' and vr[mid] != 'ВСЕ':
+        elif spend[mid] != 'все' and vr[mid] != 'все':
             if catg[kods[mid]] == 'spend':
                 cur.execute("SELECT name, sum FROM spend WHERE login = '%s' AND year = '%d' AND month = '%d' AND day = '%d' AND bank = '%s' AND cat = '%s'"%(kods[mid],year,mon,day,spend[mid],vr[mid]))
             elif catg[kods[mid]] == 'fin':
@@ -1563,13 +1855,13 @@ def bank_fin_his2(message):
         stroka1 = str(day) + "." + str(mon) + "." + str(year) + ":\n"
         kol = 0
         for row in cur:
-            if vr[mid] == 'ВСЕ':
+            if vr[mid] == 'все':
                 stroka1 += "Категория: " + row[2] + "\n"
                 try:
                     cat_s[row[2]] += row[1]
                 except KeyError:
                     cat_s[row[2]] = row[1]
-            if spend[mid] == 'ВСЕ':
+            if spend[mid] == 'все':
                 stroka1 += "Счет: " + row[3] + "\n"
             txt = row[0]
             txt = txt.split('%')
@@ -1596,7 +1888,7 @@ def bank_fin_his2(message):
             kodK = 1
     cur.close()
     conn.close()
-    if vr[mid] == 'ВСЕ':
+    if vr[mid] == 'все':
         stroka += 'По категориям:\n'
         for i in cat_s:
             stroka += i + ': ' + str(round(cat_s[i],2)) + '\n'
@@ -1611,17 +1903,17 @@ def bank_fin_add1(message):
     mid = message.chat.id
     text = message.text
     users[mid] = prev_step(users[mid])
-    if text == 'ОТМЕНА':
+    if text == 'отмена':
         bot.send_message(mid, "Выберите действие", reply_markup = MUP[users[mid]])
         vr.pop(mid)
         return
-    if text.upper() not in vr[mid]:
+    if text.lower() not in vr[mid]:
         bot.send_message(mid, "Такой категории нет", reply_markup = MUP[users[mid]])
         vr.pop(mid)
         return
-    vr[mid] = text
+    vr[mid] = text.lower()
     markup1 = types.ReplyKeyboardMarkup()
-    markup1.row('ОТМЕНА')
+    markup1.row('Отмена')
     markup1.row('Сегодня')
     markup1.row('Вчера')
     users[mid] += '_add'
@@ -1636,13 +1928,13 @@ def bank_fin_add2(message): #дата
     mid = message.chat.id
     text = message.text
     users[mid] = prev_step(users[mid])
-    if text.upper() == 'ОТМЕНА':
+    if text.lower() == 'отмена':
         bot.send_message(mid, "Выберите действие", reply_markup = MUP[users[mid]])
         vr.pop(mid)
         return
-    if text.upper() == 'СЕГОДНЯ':
+    if text.lower() == 'сегодня':
         tme[mid] = tday()
-    elif text.upper() == 'ВЧЕРА':
+    elif text.lower() == 'вчера':
         tme[mid] = lday()
     else:
         text = text.split()
@@ -1670,7 +1962,7 @@ def bank_fin_add3(message):
     mid = message.chat.id
     text = message.text
     users[mid] = prev_step(users[mid])
-    if text == 'ОТМЕНА':
+    if text == 'отмена':
         bot.send_message(mid, "Выберите действие", reply_markup = MUP[users[mid]])
         vr.pop(mid)
         return
@@ -1698,6 +1990,10 @@ def bank_fin_add3(message):
             bot.send_message(mid, "Не используйте % в описании", reply_markup = MUP[users[mid]])
             vr.pop(mid)
             return
+        if check_text(text.lower(), 'ruseng1'):
+            bot.send_message(mid, 'Используйте только русские или латинские буквы, пробел или цифры', reply_markup = MUP[users[mid]])
+            vr.pop(mid)
+            return
         text += '%' + str(nums())
     conn = sqlite3.connect(user_db(kods[mid]))
     cur = conn.cursor()
@@ -1718,9 +2014,9 @@ def bank_fin_add3(message):
     tme.pop(mid)
     cur.execute("UPDATE bank SET bal = '%f' WHERE login = '%s' AND name = '%s'"%(bal,kods[mid],spend[mid]))
     if catg[kods[mid]] == 'spend':
-        cur.execute("INSERT INTO spend (login,year,month,day,cat,bank,name,sum) VALUES ('%s','%d','%d','%d','%s','%s','%s','%f')"%(kods[mid],tm[2],tm[1],tm[0],vr[mid],spend[mid],text,ras))
+        cur.execute("INSERT INTO spend (login,year,month,day,cat,bank,name,sum) VALUES ('%s','%d','%d','%d','%s','%s','%s','%f')"%(kods[mid],tm[2],tm[1],tm[0],vr[mid],spend[mid],text.lower(),ras))
     elif catg[kods[mid]] == 'fin':
-        cur.execute("INSERT INTO inc (login,year,month,day,cat,bank,name,sum) VALUES ('%s','%d','%d','%d','%s','%s','%s','%f')"%(kods[mid],tm[2],tm[1],tm[0],vr[mid],spend[mid],text,ras))
+        cur.execute("INSERT INTO inc (login,year,month,day,cat,bank,name,sum) VALUES ('%s','%d','%d','%d','%s','%s','%s','%f')"%(kods[mid],tm[2],tm[1],tm[0],vr[mid],spend[mid],text.lower(),ras))
     conn.commit()
     cur.close()
     conn.close()
@@ -1732,17 +2028,17 @@ def bank_fin_edit1(message):
     mid = message.chat.id
     text = message.text
     users[mid] = prev_step(users[mid])
-    if text == 'ОТМЕНА':
+    if text == 'отмена':
         bot.send_message(mid, "Выберите действие", reply_markup = MUP[users[mid]])
         vr.pop(mid)
         return
-    if text.upper() not in vr[mid]:
+    if text.lower() not in vr[mid]:
         bot.send_message(mid, "Такой категории нет", reply_markup = MUP[users[mid]])
         vr.pop(mid)
         return
     vr[mid] = text
     markup1 = types.ReplyKeyboardMarkup()
-    markup1.row('ОТМЕНА')
+    markup1.row('Отмена')
     markup1.row('Сегодня')
     markup1.row('Вчера')
     users[mid] += '_edit'
@@ -1754,13 +2050,13 @@ def bank_fin_edit2(message): #дата
     mid = message.chat.id
     text = message.text
     users[mid] = prev_step(users[mid])
-    if text.upper() == 'ОТМЕНА':
+    if text.lower() == 'отмена':
         bot.send_message(mid, "Выберите действие", reply_markup = MUP[users[mid]])
         vr.pop(mid)
         return
-    if text.upper() == 'СЕГОДНЯ':
+    if text.lower() == 'сегодня':
         tme[mid] = tday()
-    elif text.upper() == 'ВЧЕРА':
+    elif text.lower() == 'вчера':
         tme[mid] = lday()
     else:
         text = text.split()
@@ -1785,7 +2081,7 @@ def bank_fin_edit2(message): #дата
     kol = 0
     vr1[mid] = {}
     markup1 = types.ReplyKeyboardMarkup()
-    markup1.row('ОТМЕНА')
+    markup1.row('Отмена')
     if catg[kods[mid]] == 'spend':
         cur.execute("SELECT name, sum FROM spend WHERE login = '%s' AND year = '%d' AND month = '%d' AND day = '%d' AND bank = '%s' AND cat = '%s'"%(kods[mid],tme[mid][2],tme[mid][1],tme[mid][0],spend[mid],vr[mid]))
     elif catg[kods[mid]] == 'fin':
@@ -1808,11 +2104,11 @@ def bank_fin_edit2(message): #дата
     bot.register_next_step_handler(sent, bank_fin_edit3)
 
 # Редактирование 3/5
-def bank_spend_edit3(message):
+def bank_fin_edit3(message):
     mid = message.chat.id
     text = message.text
     users[mid] = prev_step(users[mid])
-    if text.upper() == 'ОТМЕНА':
+    if text.lower() == 'отмена':
         bot.send_message(mid, "Выберите действие", reply_markup = MUP[users[mid]])
         vr1.pop(mid)
         return
@@ -1849,11 +2145,11 @@ def bank_spend_edit3(message):
     bot.send_message(mid, stroka, reply_markup = keybGR)
 
 # Редактирование 4/5
-def bank_spend_edit4(message):
+def bank_fin_edit4(message):
     mid = message.chat.id
     text = message.text
     users[mid] = prev_step(users[mid])
-    if text.upper() == 'ОТМЕНА':
+    if text.lower() == 'отмена':
         bot.send_message(mid, "Выберите действие", reply_markup = MUP[users[mid]])
         return
     if text not in vr1[mid]:
@@ -1871,11 +2167,11 @@ def bank_spend_edit4(message):
     bot.send_message(mid, "Категория изменена", reply_markup = MUP[users[mid]])
 
 # Редактирование 5/5
-def bank_spend_edit5(message):
+def bank_fin_edit5(message):
     mid = message.chat.id
     text = message.text
     users[mid] = prev_step(users[mid])
-    if text.upper() == 'ОТМЕНА':
+    if text.lower() == 'отмена':
         bot.send_message(mid, "Выберите действие", reply_markup = MUP[users[mid]])
         return
     ras = 0
@@ -1919,16 +2215,16 @@ def bank_tr1(message):
     mid = message.chat.id
     text = message.text
     users[mid] = prev_step(users[mid])
-    if text == 'ОТМЕНА':
+    if text == 'отмена':
         bot.send_message(mid, "Выберите действие", reply_markup = MUP[users[mid]])
         return
-    if text.upper() not in vr[mid]:
+    if text.lower() not in vr[mid]:
         bot.send_message(mid, "Такого счета нет", reply_markup = MUP[users[mid]])
         return
-    vr2[mid] = vr2[mid][vr[mid].index(text.upper())]
+    vr2[mid] = vr2[mid][vr[mid].index(text.lower())]
     vr[mid] = text
     markup1 = types.ReplyKeyboardMarkup()
-    markup1.row('ОТМЕНА')
+    markup1.row('Отмена')
     for i in vr4[mid]:
         if i != vr[mid]:
             markup1.row(i)            
@@ -1941,13 +2237,13 @@ def bank_tr2(message):
     mid = message.chat.id
     text = message.text
     users[mid] = prev_step(users[mid])
-    if text == 'ОТМЕНА':
+    if text == 'отмена':
         bot.send_message(mid, "Выберите действие", reply_markup = MUP[users[mid]])
         return
-    if text.upper() not in vr1[mid]:
+    if text.lower() not in vr1[mid]:
         bot.send_message(mid, "Такого счета нет", reply_markup = MUP[users[mid]])
         return
-    vr3[mid] = vr3[mid][vr1[mid].index(text.upper())]
+    vr3[mid] = vr3[mid][vr1[mid].index(text.lower())]
     vr1[mid] = text
     users[mid] = 'main_bank_tr'
     sent = bot.send_message(mid, 'Напишите сумму перевода', reply_markup = markupCanc)
@@ -1958,7 +2254,7 @@ def bank_tr3(message): #сумма перевода
     mid = message.chat.id
     text = message.text
     users[mid] = prev_step(users[mid])
-    if text == 'ОТМЕНА':
+    if text == 'отмена':
         bot.send_message(mid, "Выберите действие", reply_markup = MUP[users[mid]])
         return
     if text[0] == '-':
@@ -2018,14 +2314,14 @@ def callback_inline(call):
         if call.data == "gr_yes":
             bot.edit_message_text(chat_id = mid, message_id = call.message.message_id, text = "Будем добавлять еще долг уже существующим")
             markup1 = types.ReplyKeyboardMarkup()
-            markup1.row('ОТМЕНА')
+            markup1.row('Отмена')
             sent = bot.send_message(mid, 'Введите размер долга', reply_markup = markup1)
             bot.register_next_step_handler(sent, group5)
             
         if call.data == "gr_no":
             bot.edit_message_text(chat_id = mid, message_id = call.message.message_id, text = "Оставим у существующих все как есть")
             markup1 = types.ReplyKeyboardMarkup()
-            markup1.row('ОТМЕНА')
+            markup1.row('Отмена')
             sent = bot.send_message(mid, 'Введите размер долга', reply_markup = markup1)
             bot.register_next_step_handler(sent, group6)
             
@@ -2098,7 +2394,7 @@ def callback_inline(call):
             elif catg[kods[mid]] == 'fin':
                 cur.execute("SELECT cat FROM fcats WHERE login = '%s'"%(kods[mid]))
             markup1 = types.ReplyKeyboardMarkup()
-            markup1.row('ОТМЕНА')
+            markup1.row('Отмена')
             vr1[mid] = []
             for row in cur:
                 markup1.row(row[0])
@@ -2111,7 +2407,61 @@ def callback_inline(call):
         if call.data == "bank_fin_chngsum":
             bot.edit_message_text(chat_id = mid, message_id = call.message.message_id, text = "Не забудьте, что у вас изменится и счет")
             sent = bot.send_message(mid, "Напишите новую сумму", reply_markup = markupCanc)
-            bot.register_next_step_handler(sent, bank_fin_edit5)        
+            bot.register_next_step_handler(sent, bank_fin_edit5)
+
+        if call.data == "alice_add_yes":
+            bot.edit_message_text(chat_id = mid, message_id = call.message.message_id, text = "Хорошо")
+            sent = bot.send_message(mid, "Напишите фразу-вопрос (без знаков препинания)", reply_markup = markupCanc)
+            bot.register_next_step_handler(sent, alice_add1)
+
+        if call.data == "alice_add_no":
+            users[mid] = prev_step(users[mid])
+            bot.edit_message_text(chat_id = mid, message_id = call.message.message_id, text = "Ладно. Чтобы добавить фразы напишите еще раз /alice")
+
+        if call.data == "alice_auth_yes":
+            conn = sqlite3.connect(user_db(kods[mid]))
+            cur = conn.cursor()
+            cur.execute("DELETE FROM alice WHERE id = '%s'"%(vr[mid]))
+            conn.commit()
+            cur.close()
+            conn.close()
+            conn = sqlite3.connect(db)
+            cur = conn.cursor()
+            cur.execute("INSERT INTO zalog_alice (id,login) VALUES ('%s','%s')"%(vr[mid],kods[mid]))
+            conn.commit()
+            cur.close()
+            conn.close()
+            bot.edit_message_text(chat_id = mid, message_id = call.message.message_id, text = "Добавление выполнено выполнено")
+            users[mid] = prev_step(users[mid])
+            bot.send_message(mid, "Выберите действие", reply_markup = MUP[users[mid]])
+
+        if call.data == "alice_auth_no":
+            conn = sqlite3.connect(user_db(kods[mid]))
+            cur = conn.cursor()
+            cur.execute("DELETE FROM alice WHERE id = '%s'"%(vr[mid]))
+            conn.commit()
+            cur.close()
+            conn.close()
+            bot.edit_message_text(chat_id = mid, message_id = call.message.message_id, text = "Удаление выполнено")
+            users[mid] = prev_step(users[mid])
+            bot.send_message(mid, "Выберите действие", reply_markup = MUP[users[mid]])
+
+        if call.data == "alice_deauth_yes":
+            
+            conn = sqlite3.connect(db)
+            cur = conn.cursor()
+            cur.execute("DELETE FROM zalog_alice WHERE login = '%s'"%(kods[mid]))
+            conn.commit()
+            cur.close()
+            conn.close()
+            bot.edit_message_text(chat_id = mid, message_id = call.message.message_id, text = "Удаление сессий выполнено")
+            users[mid] = prev_step(users[mid])
+            bot.send_message(mid, "Выберите действие", reply_markup = MUP[users[mid]])
+
+        if call.data == "alice_deauth_no":
+            users[mid] = prev_step(users[mid])
+            bot.edit_message_text(chat_id = mid, message_id = call.message.message_id, text = "Хорошо, сессии работают")
+            bot.send_message(mid, "Выберите действие", reply_markup = MUP[users[mid]])
 
 
 #WEBHOOK_START
