@@ -2,26 +2,31 @@
 import telebot
 import sqlite3
 from telebot import types
-from time import sleep
-from time import ctime
 
 """
 Планирующиеся изменения:
-Непрекращающаяся работа
+
 """
 
-__version__ = '0.2.0.3'
+__version__ = '0.2.1.2'
 __chng__ = """
-0.2.0.0:
+2.0.0:
 Команды теперь не через слеш и на русском!
 Усовершенствованы системы хранения и обраотки данных
-0.2.0.1:
+2.0.1:
 Вместо CANCEL теперь ОТМЕНА (полный перевод)
 Команды можно писать и большими и маленькими буквами
-0.2.0.2:
+2.0.2:
 Ввод логина и пароля при регистрации и авторизации теперь возможен и через два разных сообщения!
-0.2.0.3:
+2.0.3:
 Пароль должен состоять только из символов A..Z, a..z или цифр
+
+2.1.0:
+Бот будет работать без перебоев (я надеюсь)
+2.1.1:
+Теперь нельзя заходить по одному логину с разных аккаунтов одновременно
+2.1.2:
+Оптимизация кода
 """
 __desc__ = """
 Данный бот предназначени для того, чтобы вы не забыли кто и сколько вам должен)
@@ -40,16 +45,22 @@ __desc__ = """
 TOKEN = 'TGBOT_TOKEN_HERE'
 bot = telebot.TeleBot(TOKEN)
 
+db = 'my.db'
+aid = 0 # ADMIN_TGID_HERE
+code = 'пассажиры'
 ERROR = 0
+ERRORS_DESC = """
+0 - все в порядке
+1 - остановлено пользователем
+"""
 
 logins = [] #все существующие в системе логины
 users = dict() #шаги пользователей
 kods = dict() #id + логины залогинившихся пользователей
 vr = dict() #временные данные
 
-
 def loadlogins():
-    conn = sqlite3.connect('my.db')
+    conn = sqlite3.connect(db)
     cur = conn.cursor()
     global logins
     cur.execute('SELECT * FROM users')
@@ -59,7 +70,7 @@ def loadlogins():
     conn.close()
 
 def loadkods():
-    conn = sqlite3.connect('my.db')
+    conn = sqlite3.connect(db)
     cur = conn.cursor()
     global logins
     cur.execute('SELECT * FROM zalog')
@@ -69,7 +80,7 @@ def loadkods():
     conn.close()
 
 def del_kod(kd):
-    conn = sqlite3.connect('my.db')
+    conn = sqlite3.connect(db)
     cur = conn.cursor()
     cur.execute("DELETE FROM zalog WHERE id = '%d'"%(kd))
     conn.commit()
@@ -85,30 +96,70 @@ markup.row('ДОЛГИ','ДОБАВИТЬ')
 markup.row('РЕДАКТИРОВАТЬ','РЕГИСТРАЦИЯ')
 markup.row('СМЕНА ПАРОЛЯ','О БОТЕ')
 
+@bot.message_handler(commands=['errors'])
+def errors1(message):
+    mid = message.chat.id
+    users[mid] = 1
+    sent = bot.send_message(mid, 'Введите кодовое слово:')
+    bot.register_next_step_handler(sent, errors2)
+
+def errors2(message):
+    mid = message.chat.id
+    text = message.text
+    users[mid] = 0
+    if text == code and ERROR != 0:
+        markup1 = types.ReplyKeyboardMarkup()
+        markup1.row('ДА')
+        markup1.row('НЕТ')
+        try:
+            FILE = open ("nohup.out","r")
+            LOGS = FILE.read()
+            FILE.close()
+        except Exception:
+            LOGS = ''
+        sent = bot.send_message(mid, 'ERROR: ' + str(ERROR) + '\n\nLOGS:\n' + LOGS + '\n\nЗапустить бота?', reply_markup=markup1)
+        users[mid] = 1
+        bot.register_next_step_handler(sent, errors3)
+    elif text == code and ERROR == 0:
+        markup1 = types.ReplyKeyboardMarkup()
+        markup1.row('ДА')
+        markup1.row('НЕТ')
+        sent = bot.send_message(mid, 'Остановить бота?', reply_markup=markup1)
+        users[mid] = 1
+        bot.register_next_step_handler(sent, errors4)
+    else:
+        bot.send_message(mid, 'Кодовое слово не верно')
+
+def errors3(message):
+    global ERROR
+    mid = message.chat.id
+    text = message.text
+    text = text.upper()
+    users[mid] = 0
+    if text == 'ДА':
+        ERROR = 0
+        bot.send_message(mid, 'Бот запущен', reply_markup=markup)
+    else:
+        bot.send_message(mid, 'Бот не запущен', reply_markup=markup)
+
+def errors4(message):
+    global ERROR
+    mid = message.chat.id
+    text = message.text
+    text = text.upper()
+    users[mid] = 0
+    if text == 'ДА':
+        ERROR = 1
+        bot.send_message(mid, 'Бот остановлен', reply_markup=markup)
+    else:
+        bot.send_message(mid, 'Бот работает', reply_markup=markup)
+
 @bot.message_handler(commands=['start'])
 def start(message):
     mid = message.chat.id
     bot.send_message(mid , __desc__ + '\nВерсия бота: ' + str(__version__) + '\n\nСписок изменений:' + __chng__, reply_markup=markup)
     if(users.get(mid) == None):
         users[mid] = 0
-    start1(message)
-    
-
-def start1(message):
-    conn = sqlite3.connect('my.db')
-    cur = conn.cursor()
-    cur.execute('SELECT * FROM users')
-    row = cur.fetchone()
-    while row is not None:
-        if row[1] == 'user':
-            pas = row[2]
-            row = None
-        else:
-            row = cur.fetchone()
-    bot.send_message(message.chat.id, "Привет, мне срочно нужна помощь! Потести моего бота. Здесь есть аккаунт: user. Пароль у него: " + pas)
-    cur.close()
-    conn.close()
-
 
 @bot.message_handler(content_types=['text'])
 def main(message):
@@ -117,90 +168,91 @@ def main(message):
     if((users.get(mid) == None) or (users[mid] == 0)):
         users[mid] = 0
         text = text.upper()
-        if text == 'РЕГИСТРАЦИЯ':
-            if kods.get(mid) == None:
-                sent = bot.send_message(mid, 'Пожалуйста, введите новый логин и пароль через пробел или в два разных сообщения:')
-                users[mid] = 1
-                bot.register_next_step_handler(sent, reg1)
-            else:
-                bot.send_message(mid, 'Вы уже авторизированны')
+        if ERROR == 0:
+            if text == 'РЕГИСТРАЦИЯ':
+                if kods.get(mid) == None:
+                    sent = bot.send_message(mid, 'Пожалуйста, введите новый логин и пароль через пробел или в два разных сообщения:')
+                    users[mid] = 1
+                    bot.register_next_step_handler(sent, reg1)
+                else:
+                    bot.send_message(mid, 'Вы уже авторизированны')
                 
-        elif text == 'ВХОД':
-            if kods.get(mid) == None:
-                sent = bot.send_message(mid, 'Пожалуйста, введите свой логин и пароль через пробел или в два разных сообщения:')
-                users[mid] = 1
-                bot.register_next_step_handler(sent, login1)
-            else:
-                bot.send_message(mid, 'Вы уже авторизированны')
+            elif text == 'ВХОД':
+                if kods.get(mid) == None:
+                    sent = bot.send_message(mid, 'Пожалуйста, введите свой логин и пароль через пробел или в два разных сообщения:')
+                    users[mid] = 1
+                    bot.register_next_step_handler(sent, login1)
+                else:
+                    bot.send_message(mid, 'Вы уже авторизированны')
                 
-        elif text == 'ВЫХОД':
-            if kods.get(mid) == None:
-                bot.send_message(mid, 'Сначала вам нужно авторизоваться')
-            else:
-                kods.pop(mid)
-                del_kod(mid)
-                bot.send_message(mid, 'Выход выполнен')
+            elif text == 'ВЫХОД':
+                if kods.get(mid) == None:
+                    bot.send_message(mid, 'Сначала вам нужно авторизоваться')
+                else:
+                    kods.pop(mid)
+                    del_kod(mid)
+                    bot.send_message(mid, 'Выход выполнен')
                 
-        elif text == 'ДОЛГИ':
-            if kods.get(mid) == None:
-                bot.send_message(mid, 'Сначала вам нужно авторизоваться')
-            else:
-                kol = 0
-                osum = 0
-                stroka = ""
-                stroka += 'Ваши должники:\n'
-                conn = sqlite3.connect('my.db')
-                cur = conn.cursor()
-                cur.execute("SELECT cred, sz FROM credits WHERE login = '%s'"%(kods[mid]))
-                for row in cur:
-                    stroka += row[0] + ' ' + str(row[1]) + '\n'
-                    kol = kol + 1
-                    osum += row[1]
-                stroka += 'Всего человек: ' + str(kol) + '\nСумма: ' + str(osum)
-                bot.send_message(mid, stroka, reply_markup=markup)
-                cur.close()
-                conn.close()
+            elif text == 'ДОЛГИ':
+                if kods.get(mid) == None:
+                    bot.send_message(mid, 'Сначала вам нужно авторизоваться')
+                else:
+                    kol = 0
+                    osum = 0
+                    stroka = ""
+                    stroka += 'Ваши должники:\n'
+                    conn = sqlite3.connect(db)
+                    cur = conn.cursor()
+                    cur.execute("SELECT cred, sz FROM credits WHERE login = '%s'"%(kods[mid]))
+                    for row in cur:
+                        stroka += row[0] + ' ' + str(row[1]) + '\n'
+                        kol = kol + 1
+                        osum += row[1]
+                    stroka += 'Всего человек: ' + str(kol) + '\nСумма: ' + str(osum)
+                    bot.send_message(mid, stroka, reply_markup=markup)
+                    cur.close()
+                    conn.close()
                 
-        elif text == 'О БОТЕ':
-            start(message)
+            elif text == 'О БОТЕ':
+                start(message)
 
-        elif text == 'СМЕНА ПАРОЛЯ':
-            if kods.get(mid) == None:
-                bot.send_message(mid, 'Сначала вам нужно авторизоваться')
-            else:
-                sent = bot.send_message(mid, 'Введите старый пароль')
-                users[mid] = 1
-                bot.register_next_step_handler(sent, chngpass1)
+            elif text == 'СМЕНА ПАРОЛЯ':
+                if kods.get(mid) == None:
+                    bot.send_message(mid, 'Сначала вам нужно авторизоваться')
+                else:
+                    sent = bot.send_message(mid, 'Введите старый пароль')
+                    users[mid] = 1
+                    bot.register_next_step_handler(sent, chngpass1)
 
-        elif text == 'ДОБАВИТЬ':
-            if kods.get(mid) == None:
-                bot.send_message(mid, 'Сначала вам нужно авторизоваться')
-            else:
-                markup1 = types.ReplyKeyboardMarkup()
-                markup1.row('ОТМЕНА')
-                sent = bot.send_message(mid, 'Введите фамилию, имя и размер долга через пробел или ОТМЕНА', reply_markup = markup1)
-                users[mid] = 1
-                bot.register_next_step_handler(sent, addcredit)
+            elif text == 'ДОБАВИТЬ':
+                if kods.get(mid) == None:
+                    bot.send_message(mid, 'Сначала вам нужно авторизоваться')
+                else:
+                    markup1 = types.ReplyKeyboardMarkup()
+                    markup1.row('ОТМЕНА')
+                    sent = bot.send_message(mid, 'Введите фамилию, имя и размер долга через пробел или ОТМЕНА', reply_markup = markup1)
+                    users[mid] = 1
+                    bot.register_next_step_handler(sent, addcredit)
 
-        elif text == 'РЕДАКТИРОВАТЬ':
-            if kods.get(mid) == None:
-                bot.send_message(mid, 'Сначала вам нужно авторизоваться')
-            else:
-                markup1 = types.ReplyKeyboardMarkup()
-                markup1.row('ОТМЕНА')
-                conn = sqlite3.connect('my.db')
-                cur = conn.cursor()
-                cur.execute("SELECT cred FROM credits WHERE login = '%s'"%(kods[mid]))
-                for row in cur:
-                    markup1.row(row[0])
-                cur.close()
-                conn.close()
-                sent = bot.send_message(mid, 'Введите фамилию и имя должника, у которого хотите изменить долг или ОТМЕНА', reply_markup=markup1)
-                users[mid] = 1
-                bot.register_next_step_handler(sent, edit1)
+            elif text == 'РЕДАКТИРОВАТЬ':
+                if kods.get(mid) == None:
+                    bot.send_message(mid, 'Сначала вам нужно авторизоваться')
+                else:
+                    markup1 = types.ReplyKeyboardMarkup()
+                    markup1.row('ОТМЕНА')
+                    conn = sqlite3.connect(db)
+                    cur = conn.cursor()
+                    cur.execute("SELECT cred FROM credits WHERE login = '%s'"%(kods[mid]))
+                    for row in cur:
+                        markup1.row(row[0])
+                    cur.close()
+                    conn.close()
+                    sent = bot.send_message(mid, 'Введите фамилию и имя должника, у которого хотите изменить долг или ОТМЕНА', reply_markup=markup1)
+                    users[mid] = 1
+                    bot.register_next_step_handler(sent, edit1)
 
         else:
-            bot.send_message(mid, 'Команда не найдена')
+            bot.send_message(mid, 'Проводятся технические работы')
 
 
 
@@ -255,7 +307,7 @@ def reg1(message):
             if ((pas[i]<'a' or pas[i]>'z') and (pas[i]<'0' or pas[i]>'9') and (pas[i]<'A' or pas[i]>'Z')):
                 bot.send_message(mid, 'Некорректный ввод. Используйте только символы a..z, A..Z или цифры для пароля')
                 return
-        conn = sqlite3.connect('my.db')
+        conn = sqlite3.connect(db)
         cur = conn.cursor()
         cur.execute("INSERT INTO users (login,password) VALUES ('%s','%s')"%(log,pas))
         conn.commit()
@@ -276,7 +328,7 @@ def reg2(message):
         if ((pas[i]<'a' or pas[i]>'z') and (pas[i]<'0' or pas[i]>'9') and (pas[i]<'A' or pas[i]>'Z')):
             bot.send_message(mid, 'Некорректный ввод. Используйте только символы a..z, A..Z или цифры для пароля')
             return
-    conn = sqlite3.connect('my.db')
+    conn = sqlite3.connect(db)
     cur = conn.cursor()
     cur.execute("INSERT INTO users (login,password) VALUES ('%s','%s')"%(log,pas))
     conn.commit()
@@ -299,6 +351,9 @@ def login1(message):
         else:
             log = text.lower()
             if log in logins:
+                if log in kods.values():
+                    bot.send_message(mid, 'Данный участник уже авторизирован')
+                    return
                 vr[mid] = log
                 sent = bot.send_message(mid, 'Введите пароль')
                 users[mid] = 1
@@ -309,7 +364,10 @@ def login1(message):
                 return
     log = log.lower()
     if log in logins:
-        conn = sqlite3.connect('my.db')
+        if log in kods.values():
+            bot.send_message(mid, 'Данный участник уже авторизирован')
+            return
+        conn = sqlite3.connect(db)
         cur = conn.cursor()
         cur.execute('SELECT * FROM users')
         for row in cur:
@@ -335,7 +393,7 @@ def login2(message):
     users[mid] = 0
     log = vr.pop(mid)
     pas = text
-    conn = sqlite3.connect('my.db')
+    conn = sqlite3.connect(db)
     cur = conn.cursor()
     cur.execute('SELECT * FROM users')
     for row in cur:
@@ -356,7 +414,7 @@ def login2(message):
 def chngpass1(message):
     text = message.text
     mid = message.chat.id
-    conn = sqlite3.connect('my.db')
+    conn = sqlite3.connect(db)
     cur = conn.cursor()
     cur.execute('SELECT * FROM users')
     for row in cur:
@@ -374,7 +432,7 @@ def chngpass1(message):
 def chngpass2(message):
     text = message.text
     users[mid] = 0
-    conn = sqlite3.connect('my.db')
+    conn = sqlite3.connect(db)
     cur = conn.cursor()
     cur.execute("UPDATE users SET password = '%s' WHERE login = '%s'"%(text,kods[mid]))
     conn.commit()
@@ -395,7 +453,7 @@ def addcredit(message):
         except Exception:
             bot.send_message(mid, 'Некорректный ввод', reply_markup=markup)
             return
-        conn = sqlite3.connect('my.db')
+        conn = sqlite3.connect(db)
         cur = conn.cursor()
         cur.execute("SELECT cred, sz FROM credits WHERE login = '%s'"%(kods[mid]))
         for row in cur:
@@ -409,7 +467,7 @@ def addcredit(message):
             conn.close()
         except Exception:
             pass
-        conn = sqlite3.connect('my.db')
+        conn = sqlite3.connect(db)
         cur = conn.cursor()
         cur.execute("INSERT INTO credits (login,cred,sz) VALUES ('%s','%s','%d')"%(kods[mid],fam,int(dolg)))
         conn.commit()
@@ -431,7 +489,7 @@ def edit1(message):
             return
         markup1 = types.ReplyKeyboardMarkup()
         markup1.row('ОТМЕНА')
-        conn = sqlite3.connect('my.db')
+        conn = sqlite3.connect(db)
         cur = conn.cursor()
         cur.execute("SELECT sz FROM credits WHERE cred = '%s'"%(fam + ' ' + im))
         for row in cur:
@@ -457,7 +515,7 @@ def edit2(message):
         except Exception:
             bot.send_message(mid, 'Некорректный ввод', reply_markup=markup)
             return
-        conn = sqlite3.connect('my.db')
+        conn = sqlite3.connect(db)
         cur = conn.cursor()
         cur.execute("SELECT cred, sz FROM credits WHERE login = '%s'"%(kods[mid]))
         kdk = 0
@@ -478,7 +536,7 @@ def edit2(message):
             if kdk == 2:
                 fam = im
             zn = zn + text
-            conn = sqlite3.connect('my.db')
+            conn = sqlite3.connect(db)
             cur = conn.cursor()
             if zn == 0:
                 cur.execute("DELETE FROM credits WHERE login = '%s' AND cred = '%s'"%(kods[mid],fam))
@@ -491,5 +549,5 @@ def edit2(message):
     else:
         bot.send_message(mid, 'Отмена выполнена', reply_markup=markup)
 
+bot.polling(none_stop=True)
 
-bot.polling()
