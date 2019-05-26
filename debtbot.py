@@ -3,14 +3,15 @@ import telebot
 import sqlite3
 from telebot import types
 import time
+import cherrypy
 
 """
 инлайн кнопка отмена
 общий назад
-Долги из счетов
+группы
 """
 
-__version__ = '0.4.0.7 Beta'
+__version__ = '4.1.0 Beta'
 __chng__ = """
 2.0.0:
 Команды теперь не через слеш и на русском!
@@ -62,6 +63,12 @@ __chng__ = """
 Добавлены переводы
 4.0.7:
 Теперь расходы связанны со счетами
+
+4.1.0:
+WebHook!!!
+(Теперь бот не должен постоянно падать)
+4.1.1:
+Мелкие орфографические исправления
 """
 
 __desc__ = """
@@ -69,9 +76,36 @@ __desc__ = """
 """
 
 TOKEN = 'TGBOT_TOKEN_HERE'
+
+WEBHOOK_HOST = 'HOST_HERE'
+WEBHOOK_PORT = 443  # 443, 80, 88 или 8443 (порт должен быть открыт!)
+WEBHOOK_LISTEN = '0.0.0.0'  # На некоторых серверах придется указывать такой же IP, что и выше
+
+WEBHOOK_SSL_CERT = '/root/debt/webhook_cert.pem'  # Путь к сертификату
+WEBHOOK_SSL_PRIV = '/root/debt/webhook_pkey.pem'  # Путь к приватному ключу
+
+WEBHOOK_URL_BASE = "https://%s:%s" % (WEBHOOK_HOST, WEBHOOK_PORT)
+WEBHOOK_URL_PATH = "/%s/" % (TOKEN)
+
 bot = telebot.TeleBot(TOKEN)
 
-db = 'my.db'
+# Наш вебхук-сервер
+class WebhookServer(object):
+    @cherrypy.expose
+    def index(self):
+        if 'content-length' in cherrypy.request.headers and \
+                        'content-type' in cherrypy.request.headers and \
+                        cherrypy.request.headers['content-type'] == 'application/json':
+            length = int(cherrypy.request.headers['content-length'])
+            json_string = cherrypy.request.body.read(length).decode("utf-8")
+            update = telebot.types.Update.de_json(json_string)
+            # Эта функция обеспечивает проверку входящего сообщения
+            bot.process_new_updates([update])
+            return ''
+        else:
+            raise cherrypy.HTTPError(403)
+
+db = '/root/debt/my.db'
 aid = 0 # ADMIN_TGID_HERE
 code = 'пассажиры'
 ERROR = 0
@@ -338,6 +372,8 @@ def main(message):
             bot.register_next_step_handler(sent, edit1)
 
         elif text == 'МОИ ГРУППЫ':
+            bot.send_message(mid, "Данная функция пока недоступна", reply_markup = MUP[users[mid]])
+            return
             stroka = ""
             stroka += 'Ваши группы:\n'
             markupGR = types.ReplyKeyboardMarkup()
@@ -1712,7 +1748,7 @@ def bank_spend_add2(message):
         vr.pop(mid)
         return
     users[mid] = 'main_bank_spend_add'
-    sent = bot.send_message(mid, "Напишите расход в формате: описание (не обязателно, не должно начинаться с числа) + сумма расхода")
+    sent = bot.send_message(mid, "Напишите расход в формате: описание (не обязательно, не должно начинаться с числа) + сумма расхода")
     bot.register_next_step_handler(sent, bank_spend_add3)
 
 def bank_spend_add3(message):
@@ -2001,7 +2037,7 @@ def bank_fin_add2(message):
         vr.pop(mid)
         return
     users[mid] = 'main_bank_fin_add'
-    sent = bot.send_message(mid, "Напишите расход в формате: описание (не обязателно, не должно начинаться с числа) + сумма расхода")
+    sent = bot.send_message(mid, "Напишите доход в формате: описание (не обязательно, не должно начинаться с числа) + сумма расхода")
     bot.register_next_step_handler(sent, bank_fin_add3)
 
 def bank_fin_add3(message):
@@ -2517,5 +2553,25 @@ def callback_inline(call):
             tme.pop(mid)
             bot.edit_message_text(chat_id = mid, message_id = call.message.message_id, text = "Хорошо, не будем удалять")
             bot.send_message(mid, "Выберите действие", reply_markup = MUP[users[mid]])
-            
-bot.polling(none_stop=True)
+
+
+# Снимаем вебхук перед повторной установкой (избавляет от некоторых проблем)
+bot.remove_webhook()
+
+ # Ставим заново вебхук
+bot.set_webhook(url=WEBHOOK_URL_BASE + WEBHOOK_URL_PATH,
+                certificate=open(WEBHOOK_SSL_CERT, 'r'))
+
+# Указываем настройки сервера CherryPy
+cherrypy.config.update({
+    'server.socket_host': WEBHOOK_LISTEN,
+    'server.socket_port': WEBHOOK_PORT,
+    'server.ssl_module': 'builtin',
+    'server.ssl_certificate': WEBHOOK_SSL_CERT,
+    'server.ssl_private_key': WEBHOOK_SSL_PRIV
+})
+
+ # Собственно, запуск!
+cherrypy.quickstart(WebhookServer(), WEBHOOK_URL_PATH, {'/': {}})
+
+#bot.polling(none_stop=True)
