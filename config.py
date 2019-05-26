@@ -2,7 +2,7 @@ from telebot import types
 
 TOKEN = 'TGBOT_TOKEN_HERE'
 
-version = '0.4.4.1 Beta'
+version = '0.4.5.0 Beta'
 
 """
 2.0.0:
@@ -82,11 +82,18 @@ WebHook!!!
 4.4.1:
 Немного доработан интерфейс
 Убраны ненужные кнопки
+
+4.5.0:
+Интерфейс еще немного переработан (вкладка аккаунт)
+Оптимизация кода
+Нельзя поменять сумму дохода так, чтобы баланс стал отрицательным
 """
 
 chng = """
-4.4.1:
-Немного доработан интерфейс
+4.5.0:
+Интерфейс еще немного переработан (вкладка аккаунт)
+Оптимизация кода
+Фикс багов
 """
 
 desc = """
@@ -119,8 +126,13 @@ mdays = {1:31,2:28,3:31,4:30,5:31,6:30,7:31,8:31,9:30,10:31,11:30,12:31}
 
 markupSG = types.ReplyKeyboardMarkup()
 markupSG.row('Мой кошелек','Мои долги')
-markupSG.row('Смена пароля', 'О боте')    
-markupSG.row('Выход')
+markupSG.row('Аккаунт', 'О боте')
+
+markupAC = types.ReplyKeyboardMarkup()
+markupAC.row('Смена пароля')
+markupAC.row('Выход')
+markupAC.row('Удалить аккаунт')
+markupAC.row('Назад')
 
 markupUS = types.ReplyKeyboardMarkup()
 markupUS.row('Вход','Регистрация')
@@ -170,5 +182,5 @@ markupG.row('Меню')
 markupG.row('Удалить группу')
 markupG.row('Добавить долг')
 
-MUP = {'mainUS':markupUS,'main':markupSG,'main_debt':markupDebt,'main_bank':markupBank,'main_bank_fin_cat':markupCat,'main_bank_spend_cat':markupCat,'main_bank_spend':markupSpend,'main_debt_group':markupG,'main_bank_fin_his':markupSZ,'main_bank_spend_his':markupSZ,'main_bank_fin':markupFin}
+MUP = {'main_account':markupAC,'mainUS':markupUS,'main':markupSG,'main_debt':markupDebt,'main_bank':markupBank,'main_bank_fin_cat':markupCat,'main_bank_spend_cat':markupCat,'main_bank_spend':markupSpend,'main_debt_group':markupG,'main_bank_fin_his':markupSZ,'main_bank_spend_his':markupSZ,'main_bank_fin':markupFin}
 
