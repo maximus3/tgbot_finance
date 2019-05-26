@@ -5,13 +5,9 @@ from telebot import types
 import time
 import cherrypy
 
-"""
-инлайн кнопка отмена
-общий назад
-группы
-"""
+TOKEN = 'TGBOT_TOKEN_HERE'
 
-__version__ = '4.1.0 Beta'
+__version__ = '0.4.2.2 Beta'
 __chng__ = """
 2.0.0:
 Команды теперь не через слеш и на русском!
@@ -69,13 +65,23 @@ WebHook!!!
 (Теперь бот не должен постоянно падать)
 4.1.1:
 Мелкие орфографические исправления
+
+4.2.0:
+Теперь расходы могут быть и не целыми!!!
+4.2.1:
+Теперь отображается ваша потенциальная сумма денег (с учетом долгов)
+4.2.2:
+Добавлены расходы и доходы по категориям при показе общих расходов
+4.3.0:
+- Добавлена возможность редактирования расходов и доходов
+При добавлении нового счета можно указать стартовый баланс
+- Возможно поменять имя категории
+- Возможно перенести расход из одной категории в другую
 """
 
 __desc__ = """
 Данный бот был создан для того, чтобы вы могли вести учет своих расходов и доходов
 """
-
-TOKEN = 'TGBOT_TOKEN_HERE'
 
 WEBHOOK_HOST = 'HOST_HERE'
 WEBHOOK_PORT = 443  # 443, 80, 88 или 8443 (порт должен быть открыт!)
@@ -87,23 +93,6 @@ WEBHOOK_SSL_PRIV = '/root/debt/webhook_pkey.pem'  # Путь к приватно
 WEBHOOK_URL_BASE = "https://%s:%s" % (WEBHOOK_HOST, WEBHOOK_PORT)
 WEBHOOK_URL_PATH = "/%s/" % (TOKEN)
 
-bot = telebot.TeleBot(TOKEN)
-
-# Наш вебхук-сервер
-class WebhookServer(object):
-    @cherrypy.expose
-    def index(self):
-        if 'content-length' in cherrypy.request.headers and \
-                        'content-type' in cherrypy.request.headers and \
-                        cherrypy.request.headers['content-type'] == 'application/json':
-            length = int(cherrypy.request.headers['content-length'])
-            json_string = cherrypy.request.body.read(length).decode("utf-8")
-            update = telebot.types.Update.de_json(json_string)
-            # Эта функция обеспечивает проверку входящего сообщения
-            bot.process_new_updates([update])
-            return ''
-        else:
-            raise cherrypy.HTTPError(403)
 
 db = '/root/debt/my.db'
 aid = 0 # ADMIN_TGID_HERE
@@ -126,37 +115,6 @@ spend = dict() #счет в расходах
 tme = dict() #время для записи расходов
 month = {'Jan':1,'Feb':2,'Mar':3,'Apr':4,'May':5,'Jun':6,'Jul':7,'Aug':8,'Sep':9,'Oct':10,'Nov':11,'Dec':12}
 mdays = {1:31,2:28,3:31,4:30,5:31,6:30,7:31,8:31,9:30,10:31,11:30,12:31}
-
-def loadlogins():
-    conn = sqlite3.connect(db)
-    cur = conn.cursor()
-    global logins
-    cur.execute('SELECT * FROM users')
-    for row in cur:
-        logins.append(row[1])
-    cur.close()
-    conn.close()
-
-def loadkods():
-    conn = sqlite3.connect(db)
-    cur = conn.cursor()
-    global logins
-    cur.execute('SELECT * FROM zalog')
-    for row in cur:
-        kods[row[0]] = row[1]
-    cur.close()
-    conn.close()
-
-def del_kod(kd):
-    conn = sqlite3.connect(db)
-    cur = conn.cursor()
-    cur.execute("DELETE FROM zalog WHERE id = '%d'"%(kd))
-    conn.commit()
-    cur.close()
-    conn.close()
-
-loadlogins()
-loadkods()
 
 markup = types.ReplyKeyboardMarkup()
 markup.row('Вход', 'Выход')
@@ -209,6 +167,121 @@ markupG.row('Удалить группу')
 markupG.row('Добавить долг')
 
 MUP = {'main':markup,'main_debt':markupDebt,'main_bank':markupBank,'main_bank_fin_cat':markupCat,'main_bank_spend_cat':markupCat,'main_bank_spend':markupSpend,'main_debt_group':markupG,'main_bank_fin_his':markupSZ,'main_bank_spend_his':markupSZ,'main_bank_fin':markupFin}
+
+bot = telebot.TeleBot(TOKEN)
+
+#WEBHOOOK_START
+
+# Наш вебхук-сервер
+class WebhookServer(object):
+    @cherrypy.expose
+    def index(self):
+        if 'content-length' in cherrypy.request.headers and \
+                        'content-type' in cherrypy.request.headers and \
+                        cherrypy.request.headers['content-type'] == 'application/json':
+            length = int(cherrypy.request.headers['content-length'])
+            json_string = cherrypy.request.body.read(length).decode("utf-8")
+            update = telebot.types.Update.de_json(json_string)
+            # Эта функция обеспечивает проверку входящего сообщения
+            bot.process_new_updates([update])
+            return ''
+        else:
+            raise cherrypy.HTTPError(403)
+
+#WEBHOOK_FINISH
+
+def loadlogins():
+    conn = sqlite3.connect(db)
+    cur = conn.cursor()
+    global logins
+    cur.execute('SELECT * FROM users')
+    for row in cur:
+        logins.append(row[1])
+    cur.close()
+    conn.close()
+
+def loadkods():
+    conn = sqlite3.connect(db)
+    cur = conn.cursor()
+    global logins
+    cur.execute('SELECT * FROM zalog')
+    for row in cur:
+        kods[row[0]] = row[1]
+    cur.close()
+    conn.close()
+
+def del_kod(kd):
+    conn = sqlite3.connect(db)
+    cur = conn.cursor()
+    cur.execute("DELETE FROM zalog WHERE id = '%d'"%(kd))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def check_num(a):
+    a = a.replace(',','.')
+    try:
+        a = float(a)
+        a = str(a)
+    except Exception:
+        return 'NO'
+    k = a
+    a = a.split('.')
+    if len(a[1])>2:
+        return 'NO'
+    return k
+
+def nums():
+    a = time.asctime()
+    a = a.split()
+    a = a[3]
+    a = a.split(':')
+    a = int(a[0])*60*60 + int(a[1])*60 + int(a[2])
+    return a
+
+def tday():
+    a = time.asctime()
+    a = a.split()
+    b = [int(a[2]),month[a[1]],int(a[4])]
+    return b
+
+def stday():
+    a = str(tday())
+    a = a.replace('[','')
+    a = a.replace(']','')
+    a = a.replace(', ','.')
+    return a
+
+def lday():
+    a = time.asctime()
+    a = a.split()
+    b = [int(a[2]),month[a[1]],int(a[4])]
+    v = 0
+    if b[2]%4 == 0:
+        v = 1
+    b [0] -= 1
+    if b[0] < 1:
+        b[1] -= 1
+        if b[1] < 1:
+            b[2] -= 1
+            b[1] = 12
+        if b[1] != 2:
+            v = 0
+        b[0] = mdays[b[1]] + v
+    return b
+
+def lmon():
+    a = time.asctime()
+    a = a.split()
+    b = [month[a[1]],int(a[4])]
+    b [0] -= 1
+    if b[0] < 1:
+        b[1] -= 1
+        b[0] = 12
+    return b
+
+loadlogins()
+loadkods()
 
 @bot.message_handler(commands=['errors'])
 def errors1(message):
@@ -925,7 +998,7 @@ def chngpass2(message):
     conn.close()
     bot.send_message(mid, 'Пароль успешно изменен на ' + text)
 
-def addcredit1(message):
+def addcredit1(message):#добавление долгов
     mid = message.chat.id
     text = message.text
     users[mid] = prev_step(users[mid])
@@ -949,7 +1022,7 @@ def addcredit2(message):
     if text != 'ОТМЕНА':
         try:
             fam, im, dolg = text.split()
-            dolg = int(dolg)
+            dolg = float(check_num(dolg))
             dolg = str(dolg)
             fam, im = fam + ' ' + im, im + ' ' + fam
         except Exception:
@@ -966,16 +1039,16 @@ def addcredit2(message):
                 return
         cur.execute("SELECT bal FROM bank WHERE login = '%s' AND name = '%s'"%(kods[mid],vr[mid]))
         for row in cur:
-            if row[0] < int(dolg):
+            if row[0] < float(dolg):
                 bot.send_message(mid, 'У вас нет столько денег', reply_markup = MUP[users[mid]])
                 cur.close()
                 conn.close()
                 return
             sz = row[0]
-        sz -= int(dolg)
-        cur.execute("UPDATE bank SET bal = '%d' WHERE login = '%s' AND name = '%s'"%(sz,kods[mid],vr[mid]))
+        sz -= float(dolg)
+        cur.execute("UPDATE bank SET bal = '%f' WHERE login = '%s' AND name = '%s'"%(sz,kods[mid],vr[mid]))
         tme[mid] = stday()
-        cur.execute("INSERT INTO credits (login,cred,time,sz) VALUES ('%s','%s','%s','%d' )"%(kods[mid],fam,tme[mid],int(dolg)))
+        cur.execute("INSERT INTO credits (login,cred,time,sz) VALUES ('%s','%s','%s','%f' )"%(kods[mid],fam,tme[mid],float(dolg)))
         conn.commit()
         cur.close()
         conn.close()
@@ -983,7 +1056,7 @@ def addcredit2(message):
     else:
         bot.send_message(mid, 'Отмена выполнена', reply_markup = MUP[users[mid]])
 
-def edit1(message):
+def edit1(message):#редактирование долгов
     text = message.text
     mid = message.chat.id
     users[mid] = prev_step(users[mid])
@@ -1045,7 +1118,7 @@ def edit3(message):
         fam, im = fam + ' ' + im, im + ' ' + fam
         vr.pop(mid)
         try:
-            text = int(text)
+            text = float(check_num(text))
         except Exception:
             bot.send_message(mid, 'Некорректный ввод', reply_markup = MUP[users[mid]])
             return
@@ -1084,12 +1157,12 @@ def edit3(message):
             if zn == 0:
                 cur.execute("DELETE FROM credits WHERE login = '%s' AND cred = '%s'"%(kods[mid],fam))
             else:
-                cur.execute("UPDATE credits SET sz = '%d' WHERE login = '%s' AND cred = '%s'"%(zn,kods[mid],fam))
+                cur.execute("UPDATE credits SET sz = '%f' WHERE login = '%s' AND cred = '%s'"%(zn,kods[mid],fam))
             cur.execute("SELECT bal FROM bank WHERE login = '%s' AND name = '%s'"%(kods[mid],vr1[mid]))
             for row in cur:
                 zn = row[0]
             zn -= text
-            cur.execute("UPDATE bank SET bal = '%d' WHERE login = '%s' AND name = '%s'"%(zn,kods[mid],vr1[mid]))
+            cur.execute("UPDATE bank SET bal = '%f' WHERE login = '%s' AND name = '%s'"%(zn,kods[mid],vr1[mid]))
             conn.commit()
             cur.close()
             conn.close()
@@ -1117,7 +1190,7 @@ def group1(message):
             for row in cur:
                 if text.upper() == row[0].upper():
                     stroka = row[0] + '\nКоличество людей: ' + str(row[1]) + '\n' + row[2] + '\n\nВыберите действие'
-                    users[mid] = 'main_debt_group'
+                    users[mid] = 'main_debt_group_opr'
                     sent = bot.send_message(mid, stroka, reply_markup = MUP[users[mid]])
                     vr[mid] = row[0]
                     bot.register_next_step_handler(sent, group4)
@@ -1134,7 +1207,7 @@ def group2(message):
     text = message.text
     mid = message.chat.id
     text1 = text.upper()
-    users[mid] = 'main_debt'
+    users[mid] = prev_step(users[mid])
     if text != 'ОТМЕНА':
         conn = sqlite3.connect(db)
         cur = conn.cursor()
@@ -1159,7 +1232,7 @@ def group2(message):
 def group3(message):
     text = message.text
     mid = message.chat.id
-    users[mid] = 'main_debt'
+    users[mid] = prev_step(users[mid])
     if text != 'ОТМЕНА':
         text1 = text.split('\n')
         i = 0
@@ -1178,14 +1251,14 @@ def group3(message):
         cur.close()
         conn.close()
         vr.pop(mid)
-        bot.send_message(mid, 'Группа создана', reply_markup = MUP[users[mid]])
+        bot.send_message(mid, 'Группа создана' + users[mid], reply_markup = MUP[users[mid]])
     else:
         bot.send_message(mid, 'Отмена выполнена', reply_markup = MUP[users[mid]])
 
 def group4(message):
     text = message.text
     mid = message.chat.id
-    users[mid] = 'main_debt'
+    users[mid] = prev_step(users[mid])
     if text.upper() == 'МЕНЮ':
         bot.send_message(mid, 'Вот меню:', reply_markup = MUP[users[mid]])
     elif text.upper() == 'УДАЛИТЬ ГРУППУ':
@@ -1210,9 +1283,9 @@ def group5(message):
     mid = message.chat.id
     if text != 'ОТМЕНА':
         try:
-            text = int(text)
+            text = float(check_num(text))
         except Exception:
-            users[mid] = 'main_debt'
+            users[mid] = 'main_debt_group'
             bot.send_message(mid, 'Некорректный ввод', reply_markup = MUP[users[mid]])
             vr.pop(mid)
             return
@@ -1238,7 +1311,8 @@ def group5(message):
             if ckod == 0:
                 pep2.append(row1[0] + ' ' + row1[1])
         for row in pep2:
-            cur.execute("INSERT INTO credits (login,cred,sz) VALUES ('%s','%s','%d')"%(kods[mid],row,text))
+            tme[mid] = stday()
+            cur.execute("INSERT INTO credits (login,cred,time,sz) VALUES ('%s','%s','%s','%f')"%(kods[mid],row,tme[mid],text))
             conn.commit()
         for fam in pep1:
             cur.execute("SELECT sz FROM credits WHERE login = '%s' AND cred = '%s'"%(kods[mid],fam))
@@ -1248,7 +1322,7 @@ def group5(message):
             if zn == 0:
                 cur.execute("DELETE FROM credits WHERE login = '%s' AND cred = '%s'"%(kods[mid],fam))
             else:
-                cur.execute("UPDATE credits SET sz = '%d' WHERE login = '%s' AND cred = '%s'"%(zn,kods[mid],fam))
+                cur.execute("UPDATE credits SET sz = '%f' WHERE login = '%s' AND cred = '%s'"%(zn,kods[mid],fam))
             conn.commit()
         cur.close()
         conn.close()
@@ -1263,9 +1337,9 @@ def group6(message):
     mid = message.chat.id
     if text != 'ОТМЕНА':
         try:
-            text = int(text)
+            text = float(check_num(text))
         except Exception:
-            users[mid] = 'main_debt'
+            users[mid] = 'main_debt_group'
             bot.send_message(mid, 'Некорректный ввод', reply_markup = MUP[users[mid]])
             vr.pop(mid)
             return
@@ -1286,17 +1360,18 @@ def group6(message):
             if kod == 0:
                 pep2.append(row1[0] + ' ' + row1[1])
         for row in pep2:
-            cur.execute("INSERT INTO credits (login,cred,sz) VALUES ('%s','%s','%d')"%(kods[mid],row,text))
+            tme[mid] = stday()
+            cur.execute("INSERT INTO credits (login,cred,time,sz) VALUES ('%s','%s','%s','%f')"%(kods[mid],row,tme[mid],text))
             conn.commit()
         cur.close()
         conn.close()
-        users[mid] = 'main_debt'
+        users[mid] = 'main_debt_group'
         bot.send_message(mid, 'Операция выполнена', reply_markup = MUP[users[mid]])
     else:
-        users[mid] = 'main_debt'
+        users[mid] = 'main_debt_group'
         bot.send_message(mid, 'Отмена выполнена', reply_markup = MUP[users[mid]])
 
-def watch_debts(message):
+def watch_debts(message):#просмотр должников
     mid = message.chat.id
     kol = 0
     osum = 0
@@ -1309,7 +1384,7 @@ def watch_debts(message):
         stroka += row[0] + ' ' + str(row[1]) + ' от ' + row[2] + '\n'
         kol = kol + 1
         osum += row[1]
-    stroka += 'Всего человек: ' + str(kol) + '\nСумма: ' + str(osum)
+    stroka += 'Всего человек: ' + str(kol) + '\nСумма: ' + str(round(osum,2))
     if kol == 0:
         stroka = 'У вас нет должников'
     bot.send_message(mid, stroka, reply_markup = MUP[users[mid]])
@@ -1320,6 +1395,7 @@ def watch_bank(message):
     mid = message.chat.id
     kol = 0
     osum = 0
+    sdebt = 0
     stroka = ""
     stroka += 'Ваши счета:\n'
     conn = sqlite3.connect(db)
@@ -1329,9 +1405,15 @@ def watch_bank(message):
         kol += 1
         stroka += str(kol) + ') ' + row[0] + '\nБаланс: ' + str(row[1]) + '\n\n'
         osum += row[1]
+    stroka += 'Сумма: ' + str(round(osum,2))
+
+    cur.execute("SELECT sz FROM credits WHERE login = '%s'"%(kods[mid]))    
+    for row in cur:
+        sdebt += row[0]
+    stroka += '\nСумма, учитывая долги: ' + str(round(osum+sdebt,2))
     cur.close()
     conn.close()
-    stroka += 'Сумма: ' + str(osum)
+    
     if kol == 0:
         stroka = 'У вас нет счетов'
     bot.send_message(mid, stroka, reply_markup = MUP[users[mid]])
@@ -1339,9 +1421,9 @@ def watch_bank(message):
 def new_bank(mid):
     sent = bot.send_message(mid, 'Введите название счета (до 32 символов)', reply_markup = markupCanc)
     users[mid] = 'main_bank_add'
-    bot.register_next_step_handler(sent, bank_add)
+    bot.register_next_step_handler(sent, bank_add1)
 
-def bank_add(message):
+def bank_add1(message):###########################################3
     mid = message.chat.id
     text = message.text
     users[mid] = prev_step(users[mid])
@@ -1365,9 +1447,32 @@ def bank_add(message):
             return
     cur.close()
     conn.close()
+    vr[mid] = text
+    markup1 = types.ReplyKeyboardMarkup()
+    markup1.row('ОТМЕНА')
+    markup1.row('0')
+    sent = bot.send_message(mid, 'Введите начальный баланс счета', reply_markup = markup1)
+    users[mid] = 'main_bank_add'
+    bot.register_next_step_handler(sent, bank_add2)
+
+def bank_add2(message):
+    mid = message.chat.id
+    text = message.text
+    users[mid] = prev_step(users[mid])
+    if text.upper() == 'ОТМЕНА':
+        bot.send_message(mid, 'Выберите действие', reply_markup = MUP[users[mid]])
+        return
+    if text[0] == '-':
+        bot.send_message(mid, "Неверный формат ввода", reply_markup = MUP[users[mid]])
+        return
+    try:
+        text = float(check_num(text))
+    except Exception:
+        bot.send_message(mid, 'Неверный формат ввода', reply_markup = MUP[users[mid]])
+        return
     conn = sqlite3.connect(db)
     cur = conn.cursor()
-    cur.execute("INSERT INTO bank (login,name,bal) VALUES ('%s','%s',%d)"%(kods[mid],text,0))
+    cur.execute("INSERT INTO bank (login,name,bal) VALUES ('%s','%s',%f)"%(kods[mid],vr[mid],text))
     conn.commit()
     cur.close()
     conn.close()
@@ -1604,6 +1709,7 @@ def bank_spend_his2(message):
     osum = 0
     kod = 0
     kol1 = 0
+    cat_s = dict()
     while kod == 0:
         if spend[mid] == 'ВСЕ' and vr[mid] == 'ВСЕ':
             cur.execute("SELECT name, sum, cat, bank FROM spend WHERE login = '%s' AND year = '%d' AND month = '%d' AND day = '%d'"%(kods[mid],year,mon,day))
@@ -1618,6 +1724,10 @@ def bank_spend_his2(message):
         for row in cur:
             if vr[mid] == 'ВСЕ':
                 stroka1 += "Категория: " + row[2] + "\n"
+                try:
+                    cat_s[row[2]] += row[1]
+                except KeyError:
+                    cat_s[row[2]] = row[1]
             if spend[mid] == 'ВСЕ':
                 stroka1 += "Счет: " + row[3] + "\n"
             txt = row[0]
@@ -1645,60 +1755,15 @@ def bank_spend_his2(message):
             kod = 1
     cur.close()
     conn.close()
+    if vr[mid] == 'ВСЕ':
+        stroka += 'По категориям:\n'
+        for i in cat_s:
+            stroka += i + ': ' + str(cat_s[i]) + '\n'
     vr.pop(mid)
     stroka += 'Итого: ' + str(osum)
     if kol1 == 0:
         stroka = "Расходов за выбранный период по данным категориям и счету нет"
     bot.send_message(mid, stroka, reply_markup = MUP[users[mid]])
-
-def nums():
-    a = time.asctime()
-    a = a.split()
-    a = a[3]
-    a = a.split(':')
-    a = int(a[0])*60*60 + int(a[1])*60 + int(a[2])
-    return a
-
-def tday():
-    a = time.asctime()
-    a = a.split()
-    b = [int(a[2]),month[a[1]],int(a[4])]
-    return b
-
-def stday():
-    a = str(tday())
-    a = a.replace('[','')
-    a = a.replace(']','')
-    a = a.replace(', ','.')
-    return a
-
-def lday():
-    a = time.asctime()
-    a = a.split()
-    b = [int(a[2]),month[a[1]],int(a[4])]
-    v = 0
-    if b[2]%4 == 0:
-        v = 1
-    b [0] -= 1
-    if b[0] < 1:
-        b[1] -= 1
-        if b[1] < 1:
-            b[2] -= 1
-            b[1] = 12
-        if b[1] != 2:
-            v = 0
-        b[0] = mdays[b[1]] + v
-    return b
-
-def lmon():
-    a = time.asctime()
-    a = a.split()
-    b = [month[a[1]],int(a[4])]
-    b [0] -= 1
-    if b[0] < 1:
-        b[1] -= 1
-        b[0] = 12
-    return b
 
 def bank_spend_add1(message):
     mid = message.chat.id
@@ -1721,7 +1786,7 @@ def bank_spend_add1(message):
     sent = bot.send_message(mid, "За какое число расход? (Формат: дд мм гггг", reply_markup = markup1)
     bot.register_next_step_handler(sent, bank_spend_add2)
 
-def bank_spend_add2(message):
+def bank_spend_add2(message): #дата
     mid = message.chat.id
     text = message.text
     users[mid] = prev_step(users[mid])
@@ -1766,7 +1831,7 @@ def bank_spend_add3(message):
     text = text.split()
     ras = 0
     try:
-        ras = int(text[len(text)-1])
+        ras = float(check_num((text[len(text)-1])))
     except Exception:
         bot.send_message(mid, "Неверный формат", reply_markup = MUP[users[mid]])
         vr.pop(mid)
@@ -1785,7 +1850,7 @@ def bank_spend_add3(message):
     cur = conn.cursor()
     cur.execute("SELECT bal FROM bank WHERE login = '%s' AND name = '%s'"%(kods[mid],spend[mid]))
     for row in cur:
-        bal = int(row[0])
+        bal = float(row[0])
     bal -= ras
     if bal < 0:
         bot.send_message(mid, "У вас столько нет", reply_markup = MUP[users[mid]])
@@ -1795,8 +1860,8 @@ def bank_spend_add3(message):
         return
     tm = tme[mid]
     tme.pop(mid)
-    cur.execute("UPDATE bank SET bal = '%d' WHERE login = '%s' AND name = '%s'"%(bal,kods[mid],spend[mid]))
-    cur.execute("INSERT INTO spend (login,year,month,day,cat,bank,name,sum) VALUES ('%s','%d','%d','%d','%s','%s','%s','%d')"%(kods[mid],tm[2],tm[1],tm[0],vr[mid],spend[mid],text,ras))
+    cur.execute("UPDATE bank SET bal = '%f' WHERE login = '%s' AND name = '%s'"%(bal,kods[mid],spend[mid]))
+    cur.execute("INSERT INTO spend (login,year,month,day,cat,bank,name,sum) VALUES ('%s','%d','%d','%d','%s','%s','%s','%f')"%(kods[mid],tm[2],tm[1],tm[0],vr[mid],spend[mid],text,ras))
     conn.commit()
     cur.close()
     conn.close()
@@ -1824,7 +1889,7 @@ def bank_spend_del1(message):
     sent = bot.send_message(mid, "За какое число расход вы хотите удалить? (Формат: дд мм гггг", reply_markup = markup1)
     bot.register_next_step_handler(sent, bank_spend_del2)
 
-def bank_spend_del2(message):
+def bank_spend_del2(message): #дата
     mid = message.chat.id
     text = message.text
     users[mid] = prev_step(users[mid])
@@ -2010,7 +2075,7 @@ def bank_fin_add1(message):
     sent = bot.send_message(mid, "За какое число доход? (Формат: дд мм гггг", reply_markup = markup1)
     bot.register_next_step_handler(sent, bank_fin_add2)
 
-def bank_fin_add2(message):
+def bank_fin_add2(message): #дата
     mid = message.chat.id
     text = message.text
     users[mid] = prev_step(users[mid])
@@ -2040,7 +2105,7 @@ def bank_fin_add2(message):
     sent = bot.send_message(mid, "Напишите доход в формате: описание (не обязательно, не должно начинаться с числа) + сумма расхода")
     bot.register_next_step_handler(sent, bank_fin_add3)
 
-def bank_fin_add3(message):
+def bank_fin_add3(message): #описание + доход
     mid = message.chat.id
     text = message.text
     users[mid] = prev_step(users[mid])
@@ -2055,7 +2120,7 @@ def bank_fin_add3(message):
     text = text.split()
     ras = 0
     try:
-        ras = int(text[len(text)-1])
+        ras = float(check_num(text[len(text)-1]))
     except Exception:
         bot.send_message(mid, "Неверный формат", reply_markup = MUP[users[mid]])
         vr.pop(mid)
@@ -2074,12 +2139,12 @@ def bank_fin_add3(message):
     cur = conn.cursor()
     cur.execute("SELECT bal FROM bank WHERE login = '%s' AND name = '%s'"%(kods[mid],spend[mid]))
     for row in cur:
-        bal = int(row[0])
+        bal = float(row[0])
     bal += ras
     tm = tme[mid]
     tme.pop(mid)
-    cur.execute("UPDATE bank SET bal = '%d' WHERE login = '%s' AND name = '%s'"%(bal,kods[mid],spend[mid]))
-    cur.execute("INSERT INTO inc (login,year,month,day,cat,bank,name,sum) VALUES ('%s','%d','%d','%d','%s','%s','%s','%d')"%(kods[mid],tm[2],tm[1],tm[0],vr[mid],spend[mid],text,ras))
+    cur.execute("UPDATE bank SET bal = '%f' WHERE login = '%s' AND name = '%s'"%(bal,kods[mid],spend[mid]))
+    cur.execute("INSERT INTO inc (login,year,month,day,cat,bank,name,sum) VALUES ('%s','%d','%d','%d','%s','%s','%s','%f')"%(kods[mid],tm[2],tm[1],tm[0],vr[mid],spend[mid],text,ras))
     conn.commit()
     cur.close()
     conn.close()
@@ -2109,7 +2174,7 @@ def bank_fin_his2(message):
         vr.pop(mid)
         return
     if text == 'СЕГОДНЯ':
-        sday = int(tm[0])
+        sday = int(m[0])
         fday = int(tm[0])
         smon = int(tm[1])
         fmon = int(tm[1])
@@ -2204,6 +2269,7 @@ def bank_fin_his2(message):
     osum = 0
     kod = 0
     kol1 = 0
+    cat_s = dict()
     while kod == 0:
         if spend[mid] == 'ВСЕ' and vr[mid] == 'ВСЕ':
             cur.execute("SELECT name, sum, cat, bank FROM inc WHERE login = '%s' AND year = '%d' AND month = '%d' AND day = '%d'"%(kods[mid],year,mon,day))
@@ -2218,6 +2284,10 @@ def bank_fin_his2(message):
         for row in cur:
             if vr[mid] == 'ВСЕ':
                 stroka1 += "Категория: " + row[2] + "\n"
+                try:
+                    cat_s[row[2]] += row[1]
+                except KeyError:
+                    cat_s[row[2]] = row[1]
             if spend[mid] == 'ВСЕ':
                 stroka1 += "Счет: " + row[3] + "\n"  
             txt = row[0]
@@ -2245,6 +2315,10 @@ def bank_fin_his2(message):
             kod = 1
     cur.close()
     conn.close()
+    if vr[mid] == 'ВСЕ':
+        stroka += 'По категориям:\n'
+        for i in cat_s:
+            stroka += i + ': ' + str(cat_s[i]) + '\n'
     vr.pop(mid)
     stroka += 'Итого: ' + str(osum)
     if kol1 == 0:
@@ -2272,7 +2346,7 @@ def bank_fin_del1(message):
     sent = bot.send_message(mid, "За какое число доход вы хотите удалить? (Формат: дд мм гггг", reply_markup = markup1)
     bot.register_next_step_handler(sent, bank_fin_del2)
 
-def bank_fin_del2(message):
+def bank_fin_del2(message): #дата
     mid = message.chat.id
     text = message.text
     users[mid] = prev_step(users[mid])
@@ -2403,7 +2477,7 @@ def bank_tr2(message):
     sent = bot.send_message(mid, 'Напишите сумму перевода', reply_markup = markupCanc)
     bot.register_next_step_handler(sent, bank_tr3)
 	
-def bank_tr3(message):
+def bank_tr3(message): #сумма перевода
     mid = message.chat.id
     text = message.text
     users[mid] = prev_step(users[mid])
@@ -2414,7 +2488,7 @@ def bank_tr3(message):
         bot.send_message(mid, "Неверный формат", reply_markup = MUP[users[mid]])	
         return
     try:
-        text = int(text)	
+        text = float(check_num(text))	
     except Exception:
         bot.send_message(mid, "Неверный формат", reply_markup = MUP[users[mid]])	
         return
@@ -2425,8 +2499,8 @@ def bank_tr3(message):
         return
     conn = sqlite3.connect(db)
     cur = conn.cursor()
-    cur.execute("UPDATE bank SET bal = '%d' WHERE login = '%s' AND name = '%s'"%(vr2[mid],kods[mid],vr[mid]))
-    cur.execute("UPDATE bank SET bal = '%d' WHERE login = '%s' AND name = '%s'"%(vr3[mid],kods[mid],vr1[mid]))
+    cur.execute("UPDATE bank SET bal = '%f' WHERE login = '%s' AND name = '%s'"%(vr2[mid],kods[mid],vr[mid]))
+    cur.execute("UPDATE bank SET bal = '%f' WHERE login = '%s' AND name = '%s'"%(vr3[mid],kods[mid],vr1[mid]))
     conn.commit()
     cur.close()
     conn.close()
@@ -2447,7 +2521,7 @@ def callback_inline(call):
         mid = call.message.chat.id
         
         if call.data == "gr_del_yes":
-            users[mid] = 'main_debt'
+            users[mid] = 'main_debt_group'
             conn = sqlite3.connect(db)
             cur = conn.cursor()
             cur.execute("DELETE FROM groups WHERE name = '%s' AND login = '%s'"%(vr[mid],kods[mid]))
@@ -2459,7 +2533,7 @@ def callback_inline(call):
             bot.send_message(mid, "Вот меню:", reply_markup = MUP[users[mid]])
             
         if call.data == "gr_del_no":
-            users[mid] = 'main_debt'
+            users[mid] = 'main_debt_group_opr'
             vr.pop(mid)
             bot.edit_message_text(chat_id = mid, message_id = call.message.message_id, text = "Хорошо, не будем удалять")
             bot.send_message(mid, "Вот меню:", reply_markup = MUP[users[mid]])
@@ -2505,7 +2579,7 @@ def callback_inline(call):
             for row in cur:
                 bal = row[0]
                 bal += vr3[mid]
-            cur.execute("UPDATE bank SET bal = '%d' WHERE login = '%s' AND name = '%s'"%(bal,kods[mid],spend[mid]))
+            cur.execute("UPDATE bank SET bal = '%f' WHERE login = '%s' AND name = '%s'"%(bal,kods[mid],spend[mid]))
             conn.commit()
             cur.close()
             conn.close()
@@ -2534,7 +2608,7 @@ def callback_inline(call):
             for row in cur:
                 bal = row[0]
                 bal -= vr3[mid]
-            cur.execute("UPDATE bank SET bal = '%d' WHERE login = '%s' AND name = '%s'"%(bal,kods[mid],spend[mid]))
+            cur.execute("UPDATE bank SET bal = '%f' WHERE login = '%s' AND name = '%s'"%(bal,kods[mid],spend[mid]))
             conn.commit()
             cur.close()
             conn.close()
@@ -2554,6 +2628,7 @@ def callback_inline(call):
             bot.edit_message_text(chat_id = mid, message_id = call.message.message_id, text = "Хорошо, не будем удалять")
             bot.send_message(mid, "Выберите действие", reply_markup = MUP[users[mid]])
 
+#WEBHOOK_START
 
 # Снимаем вебхук перед повторной установкой (избавляет от некоторых проблем)
 bot.remove_webhook()
@@ -2573,5 +2648,7 @@ cherrypy.config.update({
 
  # Собственно, запуск!
 cherrypy.quickstart(WebhookServer(), WEBHOOK_URL_PATH, {'/': {}})
+
+#WEBHOOK_FINISH
 
 #bot.polling(none_stop=True)
