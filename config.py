@@ -4,7 +4,7 @@ from telebot import types
 TOKEN = 'TGBOT_TOKEN_HERE'
 
 # Версия телеграм-бота
-version = '0.5.1.4 Beta'
+version = '0.5.2.0 Beta'
 
 """
 0.2.0.0:
@@ -117,30 +117,54 @@ WebHook!!!
 Немного изменен интерфейс
 Исправление багов
 Оптимизация программы
-"""
-
-chng = """
 0.5.1.4:
 Добавлена поддержка быстрой авторизации Яндекс.Диалогов!!!
 Небольшая оптимизация кода
+
+0.5.2.0:
+# Запись даты последнего сообщения пользователя
+# Новые функции админ-панели
+
+0.5.2.1:
+"Сумма, учитывая долги" показывается не всем
+"""
+
+chng = """
+Очень крупное обновление - добавлено множество новых функций
+- Добавлена функция "Удаление аккаунта"
+- Добавлена возможность сброса данных
+- Изменен вид показа долгов
+- Изменен вид показа расходов/доходов
+- Показ расходов/доходов за сегодня в соответствующем меню
+- Добавлена возможность добавлять расходы и доходы одной командой (подробнее /help)
+- Новая функция - уведомления (пока может только напоминать вам записывать расходы каждый день)
+- Новая функция - Шаблоны (используются при добавлении одной командой)
+- Новая функция - лимиты (подробнее /help)
+
+P.S. Возможны баги, поэтому если вы их вдруг обнаружите, то обязательно напишите об этом в @m3prod
 """
 
 # Описание телеграм-бота
 desc = """
 Данный бот поможет вам вести учет своих расходов и доходов.
-
-За всеми обновлениями можно следить тут @finance_m3news
-
-Внимание! Данный бот находится в бета-версии и все еще разрабатывается. Прошу простить за всевозможные ошибки.
-По всем вопросам, жалобам, пожеланиям, комментариям и предложениям пишите в аккаунт @m3prod
 """
 
+# Адрес папки
+directory = '/root/debt/'
+
 # Адрес общей базы данных
-db = '/root/debt/my.db'
+db = directory + 'my.db'
+
+# Адрес базы данных для уведомлений
+notif_db = directory +'notif.db'
+
 # ID админа телеграм
-admin_id = 0 # ADMIN_TGID_HERE
+admin_id = 0 #ADMIN_TGID_HERE
+admin_ids = [] #ADMINs_TGID_HERE
+tester_ids = []
 # Секретный код
 code = 'пассажиры'
+testers_code = 'яхочутестить11112018'
 # Описание ошибок
 ERRORS_DESC = """
 0 - все в порядке
@@ -151,6 +175,10 @@ ERRORS_DESC = """
 
 # Словарь, преобразующий строки вида Mmm в число или наоборот (месяц)
 month = {'Jan':1,'Feb':2,'Mar':3,'Apr':4,'May':5,'Jun':6,'Jul':7,'Aug':8,'Sep':9,'Oct':10,'Nov':11,'Dec':12, 1:'Jan',2:'Feb',3:'Mar',4:'Apr',5:'May',6:'Jun',7:'Jul',8:'Aug',9:'Sep',10:'Oct',11:'Nov',12:'Dec'}
+# Словарь, преобразующий строки с названиями месяцев в число или наоборот (именительный падеж)
+monthRim = {'январь':1,'февраль':2,'март':3,'апрель':4,'май':5,'июнь':6,'июль':7,'август':8,'сентябрь':9,'октябрь':10,'ноябрь':11,'декабрь':12,1:'январь',2:'февраль',3:'март',4:'апрель',5:'май',6:'июнь',7:'июль',8:'август',9:'сентябрь',10:'октябрь',11:'ноябрь',12:'декабрь'}
+# Словарь, преобразующий строки с названиями месяцев в число или наоборот (родительный падеж)
+monthR = {'января':1,'февраля':2,'марта':3,'апреля':4,'мая':5,'июня':6,'июля':7,'августа':8,'сентября':9,'октября':10,'ноября':11,'декабря':12,1:'января',2:'февраля',3:'марта',4:'апреля',5:'мая',6:'июня',7:'июля',8:'августа',9:'сентября',10:'октября',11:'ноября',12:'декабря'}
 # Словарь, возвращающий количесвто дней в определенном месяце
 mdays = {1:31,2:28,3:31,4:30,5:31,6:30,7:31,8:31,9:30,10:31,11:30,12:31}
 # Словарь, возвращающий номер дня недели
@@ -169,7 +197,7 @@ markupAC = types.ReplyKeyboardMarkup()
 markupAC.row('**Алиса**')
 markupAC.row('**Смена пароля**')
 markupAC.row('**Выход**')
-markupAC.row('**Удалить аккаунт**')
+markupAC.row('**Удалить аккаунт**','**Сброс данных**')
 markupAC.row('**Назад**')
 
 markupUS = types.ReplyKeyboardMarkup()
@@ -177,7 +205,7 @@ markupUS.row('**Вход**','**Регистрация**')
 markupUS.row('**О боте**')
 
 markupDebt = types.ReplyKeyboardMarkup()
-markupDebt.row('**Мои долги**')#,'Мои группы')
+markupDebt.row('**Мои долги**')
 markupDebt.row('**Добавить долг**')
 markupDebt.row('**Редактировать**')
 markupDebt.row('**Назад**')
@@ -185,12 +213,13 @@ markupDebt.row('**Назад**')
 markupBank = types.ReplyKeyboardMarkup()
 markupBank.row('**Баланс**','**Перевод**')
 markupBank.row('**Расходы**','**Доходы**')
-markupBank.row('**Настройки**')#,'**Бюджет**')
+markupBank.row('**Настройки**','**Лимиты**')
 markupBank.row('**Назад**')
 
 markupSettings = types.ReplyKeyboardMarkup()
 markupSettings.row('**Новый счет**','**Удалить счет**')
 markupSettings.row('**Категории расходов**','**Категории доходов**')
+markupSettings.row('**Уведомления**','**Шаблоны**')
 markupSettings.row('**Назад**')
 
 markupSpend = types.ReplyKeyboardMarkup()
@@ -214,19 +243,14 @@ markupSZ = types.ReplyKeyboardMarkup()
 markupSZ.row('**Отмена**')
 markupSZ.row('**Сегодня**')
 markupSZ.row('**Вчера**')
-markupSZ.row('**Этот месяц**')
-markupSZ.row('**Прошлый месяц**')
 markupSZ.row('**Эта неделя**')
+markupSZ.row('**Этот месяц**')
 markupSZ.row('**Прошлая неделя**')
+markupSZ.row('**Прошлый месяц**')
 markupSZ.row('**Позапрошлая неделя**')
 
 markupCanc = types.ReplyKeyboardMarkup()
 markupCanc.row('**Отмена**')
-
-markupG = types.ReplyKeyboardMarkup()
-markupG.row('**Меню**')
-markupG.row('**Удалить группу**')
-markupG.row('**Добавить долг**')
 
 markupAlice = types.ReplyKeyboardMarkup()
 markupAlice.row('**Поменять вопрос**','**Поменять ответ**')
@@ -235,5 +259,28 @@ markupAlice.row('**Активные сессии**')
 markupAlice.row('**Помощь**')
 markupAlice.row('**Назад**')
 
-MUP = {'main_account_alice':markupAlice,'main_account':markupAC,'mainUS':markupUS,'main':markupSG,'main_debt':markupDebt,'main_bank':markupBank,'main_bank_settings_cat':markupCat,'main_bank_spend':markupSpend,'main_debt_group':markupG,'main_bank_fin_his':markupSZ,'main_bank_spend_his':markupSZ,'main_bank_fin':markupFin,'main_bank_settings':markupSettings}
+markupRes = types.ReplyKeyboardMarkup()
+markupRes.row('**Отмена**')
+markupRes.row('**Оставить категории**')
+markupRes.row('**Удалить категории**')
+
+markupLim = types.ReplyKeyboardMarkup()
+markupLim.row('**Мои лимиты**')
+markupLim.row('**Добавить лимит**')
+markupLim.row('**Удалить лимит**')
+markupLim.row('**Назад**')
+
+markupNotif = types.ReplyKeyboardMarkup()
+markupNotif.row('**Мои уведомления**')
+markupNotif.row('**Добавить уведомление**')
+markupNotif.row('**Убрать уведомление**')
+markupNotif.row('**Назад**')
+
+markupTempl = types.ReplyKeyboardMarkup()
+markupTempl.row('**Мои шаблоны**')
+markupTempl.row('**Добавить шаблон**')
+markupTempl.row('**Удалить шаблон**')
+markupTempl.row('**Назад**')
+
+MUP = {'main_bank_settings_templates':markupTempl,'main_bank_settings_notif':markupNotif,'main_bank_limits':markupLim,'main_account_reset':markupRes,'main_account_alice':markupAlice,'main_account':markupAC,'mainUS':markupUS,'main':markupSG,'main_debt':markupDebt,'main_bank':markupBank,'main_bank_settings_cat':markupCat,'main_bank_spend':markupSpend,'main_bank_fin_his':markupSZ,'main_bank_spend_his':markupSZ,'main_bank_fin':markupFin,'main_bank_settings':markupSettings}
 

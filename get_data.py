@@ -1,7 +1,38 @@
 import sqlite3
-#from config import *
-from func import user_db
+from config import monthR, monthRim, notif_db, directory
+from func import user_db, tday, lday
 from diag import make_diag
+
+import logging
+
+logging.basicConfig(format = u'%(filename)s[LINE:%(lineno)d]# %(levelname)-8s [%(asctime)s]  %(message)s', level = logging.INFO, filename = directory + 'finbot.log')
+
+# Просмотр уведомлений о записи
+# Вход: логин
+# Выход: строка с уведомлениями
+def watch_notif(login):
+
+    notifs = []
+    
+    stroka = 'Ваши уведомления о записи расходов и доходов:\n'
+    conn = sqlite3.connect(notif_db)
+    cur = conn.cursor()
+    cur.execute("SELECT time FROM notif WHERE login = '%s'"%(login))
+    for row in cur:
+        notifs.append(row[0])
+    cur.close()
+    conn.close()
+
+    notifs.sort()
+    for elem in notifs:
+        tm = str(elem)
+        if len(tm) < 2:
+            tm = '0' + tm
+        stroka += '- ' + str(tm) + ':00\n'
+
+    if len(notifs) == 0:
+        stroka = 'У вас нет уведомлений о записи расходов и доходов'
+    return stroka
 
 # Должники
 # Вход: логин пользователя
@@ -43,9 +74,33 @@ def get_banks(login):
     conn.close()
     return banks, kol, osum
 
-# Категории
+# Шаблоны
 # Вход: логин пользователя
-# Выход: список счетов пользователя [название], количество
+# Выход: список шаблонов пользователя [название, категория, сумма], количество
+def get_templates(login):
+    templates = []
+
+    kol = 0
+
+    logging.info('get_templates: Connecting to data base')
+    conn = sqlite3.connect(user_db(login))
+    logging.info('get_templates: Connected')
+    cur = conn.cursor()
+    logging.info('get_templates: Executing')
+    cur.execute("SELECT name, cat, sum, sect FROM template")
+    for row in cur:
+        kol += 1
+        templates.append([row[0].lower(), row[1].lower(), row[2], row[3]])
+    logging.info('get_templates: Executed')
+    logging.info('get_templates: Closing connection')
+    cur.close()
+    conn.close()
+    logging.info('get_templates: Closed')
+    return templates, kol
+
+# Категории
+# Вход: логин пользователя, spend/fin (расходы или доходы)
+# Выход: список категорий пользователя [название], количество
 def get_categs(login, sect):
     categs = []
 
@@ -64,16 +119,52 @@ def get_categs(login, sect):
     conn.close()
     return categs, kol
 
+# Лимиты
+# Вход: логин пользователя
+# Выход: список лимитов пользователя [категория, количество, day/week/month/year, остаток на сегодня, сумма расходов, сумма лимита, день окончания, месяц окончания, год окончания], количество
+def get_limits(login):
+    limits = []
+
+    kol = 0
+    
+    conn = sqlite3.connect(user_db(login))
+    cur = conn.cursor()
+    cur.execute('SELECT cat, count, dur, tlim, sum, lim_sum, f_day, f_month, f_year FROM limits')
+    for row in cur:
+        kol += 1
+        limits.append([row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8]])
+        if row[0] == '#all':
+            limits = [limits.pop()] + limits
+    cur.close()
+    conn.close()
+    return limits, kol
+
 # Получение истории расходов/доходов
 # Вход: ДД, ММ, ГГГГ, ДД, ММ, ГГГГ, id пользователя, флаг отправки данных по месяцам, флаг показа всех позиций, логин, флаг расход/доход, счет, категория
 # Выход: Строка отчета, флаг составлена ли диаграмма
-def get_fin_his(sday, smon, syear, fday, fmon, fyear, kod_mon, show, login, sect, spend, categ):
+def get_fin_his(sday, smon, syear, fday, fmon, fyear, kod_mon, show, login, sect, spend, categ, show_diag):
     if sect == 'spend':
-        stroka = "Ваши расходы с " + str(sday) + "." + str(smon) + "." + str(syear) + ' по ' + str(fday) + "." + str(fmon) + "." + str(fyear) + "\n"
-        title = "Расходы с " + str(sday) + "." + str(smon) + "." + str(syear) + ' по ' + str(fday) + "." + str(fmon) + "." + str(fyear)
+        stroka = "Ваши расходы "
+        title = "Расходы "
     elif sect == 'fin':
-        stroka = "Ваши доходы с " + str(sday) + "." + str(smon) + "." + str(syear) + ' по ' + str(fday) + "." + str(fmon) + "." + str(fyear) + "\n"
-        title = "Доходы с " + str(sday) + "." + str(smon) + "." + str(syear) + ' по ' + str(fday) + "." + str(fmon) + "." + str(fyear)
+        stroka = "Ваши доходы "
+        title = "Доходы "
+    if sday == fday and smon == fmon and syear == fyear:
+        if [sday, smon, syear] == tday():
+            stroka += "за сегодня (" + str(sday) + " " + monthR[smon] + " " + str(syear) + " года)\n"
+            title += "за сегодня (" + str(sday) + " " + monthR[smon] + " " + str(syear) + " года)"
+        elif [sday, smon, syear] == lday():
+            stroka += "за вчера (" + str(sday) + " " + monthR[smon] + " " + str(syear) + " года)\n"
+            title += "за вчера (" + str(sday) + " " + monthR[smon] + " " + str(syear) + " года)"
+        else:
+            stroka += "за " + str(sday) + " " + monthR[smon] + " " + str(syear) + " года\n"
+            title += "за " + str(sday) + " " + monthR[smon] + " " + str(syear) + " года"
+    elif smon == fmon and sday == 1 and fday == 31:
+        stroka += "за " + monthRim[smon] + " " + str(syear) + " года\n"
+        title += "за " + monthRim[smon] + " " + str(syear) + " года"
+    else:
+        stroka += "с " + str(sday) + " " + monthR[smon] + " " + str(syear) + ' года, по ' + str(fday) + " " + monthR[fmon] + " " + str(fyear) + " года\n"
+        title += "с " + str(sday) + " " + monthR[smon] + " " + str(syear) + ' года, по ' + str(fday) + " " + monthR[fmon] + " " + str(fyear) + " года"
     if spend != 'все':
         stroka += "Счет: " + spend + "\n"
         title += "\nСчет: " + spend
@@ -107,12 +198,17 @@ def get_fin_his(sday, smon, syear, fday, fmon, fyear, kod_mon, show, login, sect
                 cur.execute("SELECT name, sum, cat, bank FROM spend WHERE year = '%d' AND month = '%d' AND day = '%d' AND cat = '%s'"%(year,mon,day,categ))
             elif sect == 'fin':
                 cur.execute("SELECT name, sum, cat, bank FROM inc WHERE year = '%d' AND month = '%d' AND day = '%d' AND cat = '%s'"%(year,mon,day,categ))
-        elif spend != 'все' and categ != 'все':
+        else:
             if sect == 'spend':
                 cur.execute("SELECT name, sum FROM spend WHERE year = '%d' AND month = '%d' AND day = '%d' AND bank = '%s' AND cat = '%s'"%(year,mon,day,spend,categ))
             elif sect == 'fin':
                 cur.execute("SELECT name, sum FROM inc WHERE year = '%d' AND month = '%d' AND day = '%d' AND bank = '%s' AND cat = '%s'"%(year,mon,day,spend,categ))
-        stroka1 = str(day) + "." + str(mon) + "." + str(year) + ":\n"
+        if sday == fday and smon == fmon and syear == fyear:
+            stroka1 = ''
+        elif syear == fyear:
+            stroka1 = str(day) + " " + monthR[mon] + ':\n'
+        else:
+            stroka1 = str(day) + " " + monthR[mon] + " " + str(year) + ' года:\n'
         kol = 0
         for row in cur:
             osum += round(row[1],2)
@@ -147,8 +243,7 @@ def get_fin_his(sday, smon, syear, fday, fmon, fyear, kod_mon, show, login, sect
                 stroka1 +=  "Сумма: " + str(round(row[1],2)) + "\n\n"
             else:
                 stroka1 +=  "Сумма: " + str(round(row[1],2)) + "\n" + txt[0] + "\n\n"
-
-            
+  
         if kol > 0 and kodK == 0 and kod_mon != 1 and show == 1:
             stroka += stroka1 + "\n"
         if year == fyear and mon == fmon and day == fday:
@@ -166,10 +261,25 @@ def get_fin_his(sday, smon, syear, fday, fmon, fyear, kod_mon, show, login, sect
 
     cur.close()
     conn.close()
-
     if kol1 == 0:
-        stroka =  "В период с " + str(sday) + "." + str(smon) + "." + str(syear) + ' по ' + str(fday) + "." + str(fmon) + "." + str(fyear) + " по данным категориям и счету ничего нет"
-        return stroka, 0
+        if sect == 'spend':
+            stroka = "У вас нет расходов "
+        elif sect == 'fin':
+            stroka = "У вас нет доходов "
+        if sday == fday and smon == fmon and syear == fyear:
+            if [sday, smon, syear] == tday():
+                stroka += "за сегодня (" + str(sday) + " " + monthR[smon] + " " + str(syear) + " года)\n"
+            elif [sday, smon, syear] == lday():
+                stroka += "за вчера (" + str(sday) + " " + monthR[smon] + " " + str(syear) + " года)\n"
+            else:
+                stroka += "за " + str(sday) + " " + monthR[smon] + " " + str(syear) + " года\n"
+        elif smon == fmon and sday == 1 and fday == 31:
+            stroka += "за " + monthRim[smon] + " " + str(syear) + " года\n"
+        else:
+            stroka += "с " + str(sday) + " " + monthR[smon] + " " + str(syear) + ' года, по ' + str(fday) + " " + monthR[fmon] + " " + str(fyear) + " года\n"
+        if spend != 'все' or categ != 'все':
+            stroka +=  " по данным категориям и счету"
+        return stroka, 2
     
     if kod_mon == 1:
         if categ == 'все':
@@ -203,7 +313,8 @@ def get_fin_his(sday, smon, syear, fday, fmon, fyear, kod_mon, show, login, sect
             data_values.append(round(elem[0],2))
             stroka += elem[1] + ': ' + str(round(elem[0],2)) + '\n'
         try:
-            make_diag(login, title, data_names, data_values)
+            if show_diag:
+                make_diag(login, title, data_names, data_values)
         except Exception as e:
             diag = -1       
     stroka += 'Итого: ' + str(round(osum,2))
