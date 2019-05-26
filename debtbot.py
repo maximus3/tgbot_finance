@@ -6,15 +6,13 @@ import time
 import cherrypy
 import os
 
-# Метрика
-from chatbase import Message
-
 # Мои файлы
 from config import *
 from func import *
 from diag import *
 from webhook import *
 from get_data import *
+from metrik import *
 
 ERROR = 3
 logins = loadlogins() #все существующие в системе логины
@@ -30,6 +28,7 @@ spend = dict() #счет в расходах и доходах
 tme = dict() #время для записи расходов/доходов
 catg = dict() #доходы/расходы
 inline_mes = dict() # Инлайн сообщение, которое нужно изменить
+dialogs = dict() # Токен яндекс.диалогов, который надо авторизовать после регистрации
 
 # WEBHOOK START
 
@@ -58,6 +57,20 @@ bot = telebot.TeleBot(TOKEN)
 # Вход: -
 # Выход: True если ошибки есть, False иначе
 def error_check(mid):
+    login = kods.get(mid)
+    if login != None:
+        conn = sqlite3.connect(user_db(login))
+        cur = conn.cursor()
+        try:
+            cur.execute("CREATE TABLE last_mes (login TEXT, time TEXT)")
+        except Exception:
+            pass
+        cur.execute("DELETE FROM last_mes WHERE login = ?", [(login)])
+        cur.execute("INSERT INTO last_mes (login,time) VALUES ('%s','%s')"%(login,str(time.asctime())))
+        conn.commit()
+        cur.close()
+        conn.close()
+    
     if 'errors' in users[mid]:
         return False
     if ERROR == 3 and mid == admin_id:
@@ -81,6 +94,27 @@ def admin(message):
     if mid == admin_id:
         bot.send_message(mid, 'Добро пожаловать! Всего пользователей: ' + str(len(logins)))
 
+# Дата последнего сообщения пользователя
+# Вход: Сообщение
+# Выход: Если это написал админ, то ему отправляется дата последнего сообщения каждого пользователя
+@bot.message_handler(commands=['last'])
+def admin_last(message):
+    mid = message.chat.id
+    if mid == admin_id:
+        stroka = 'Добро пожаловать! Всего пользователей: ' + str(len(logins)) + '\n'
+        for login in logins:
+            try:
+                conn = sqlite3.connect(user_db(login))
+                cur = conn.cursor()
+                cur.execute("SELECT time FROM last_mes")
+                for row in cur:
+                    stroka += login + ' - ' + str(row[0]) + '\n'
+                cur.close()
+                conn.close()
+            except Exception:
+                pass
+        bot.send_message(mid, stroka)
+
 # Подключение к Алисе от Яндекса
 # Вход: Сообщение
 # Выход: -
@@ -103,14 +137,7 @@ def alice(message):
         return
     
     # Метрика
-    metrik_id = str(mid)
-    msg = Message(api_key=metrik_key,
-                  platform="telegram",
-                  user_id=metrik_id,
-                  message="/alice",
-                  intent="bot_"+str(step),
-                  not_handled=False)
-    resp = msg.send()
+    send_metrik("telegram", str(mid), '/alice', str(step), False)
 
     if step == 'mainUS':
         bot.send_message(mid, 'Сначала вам нужно авторизироваться')
@@ -439,6 +466,17 @@ def start(message):
     if (users.get(mid) == None):
         users[mid] = 'mainUS'
     step = users[mid]
+
+    text = message.text.split()
+    if len(text) > 1:
+        text = text[1]
+        if len(text) == 64:
+            while text[len(text) -1] == 'q':
+                text = text[:-1]
+            if kods.get(mid) == None:
+                dialogs[mid] = text
+            else:
+                bot.send_message(mid, alice_after_auth(text, login))
     
     try:
         bot.send_message(mid , desc + '\nВерсия бота: ' + str(version) + '\n\nСписок изменений:' + chng, reply_markup = MUP[step])
@@ -470,14 +508,7 @@ def main(message):
         spend[mid] = 'все'
 
     # Метрика
-    metrik_id = str(mid)
-    msg = Message(api_key=metrik_key,
-                platform="telegram",
-                user_id=metrik_id,
-                message=text,
-                intent="bot_"+str(step),
-                not_handled=False)
-    resp = msg.send()
+    send_metrik("telegram", str(mid), text, str(step), False)
 
     if error_check(mid):
         return
@@ -981,6 +1012,14 @@ def registration(log, pas, mid):
     conn.commit()
     cur.close()
     conn.close()
+
+    login = log
+
+
+    if dialogs.get(mid) != None:
+        text = dialogs[mid]
+        dialogs.pop(mid)
+        bot.send_message(mid, alice_after_auth(text, login))
     
     logins.append(log)
     
@@ -1072,11 +1111,16 @@ def log_in(log, pas, mid):
     for row in cur:
         if row[0] == log:
             if row[1] == pas:
+                login = log
                 kods[mid] = log
                 cur.execute("INSERT INTO zalog (id,login) VALUES ('%d','%s')"%(mid,log))
                 conn.commit()
                 users[mid] = 'main'
                 step = users[mid] = 'main'
+                if dialogs.get(mid) != None:
+                    text = dialogs[mid]
+                    dialogs.pop(mid)
+                    bot.send_message(mid, alice_after_auth(text, login))
                 bot.send_message(mid, 'Авторизация пройдена! Рекомендуем вам удалить сообщение с паролем.', reply_markup = MUP[step])
             else:
                 users[mid] = prev_step(users[mid])

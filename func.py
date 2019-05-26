@@ -3,6 +3,35 @@ import sqlite3
 from config import month, mdays, days
 from config import db as data_base
 
+# Быстрая авторизация в Яндекс.Диалогах
+# Вход: токен, логин
+# Выход: Строка состояния
+def alice_after_auth(text, login):
+    conn = sqlite3.connect(user_db(login))
+    cur = conn.cursor()
+    try:
+        cur.execute("DELETE FROM alice WHERE id = '%s'"%(text))
+        conn.commit()
+    except Exception:
+        pass
+    cur.close()
+    conn.close()
+    conn = sqlite3.connect(data_base)
+    cur = conn.cursor()
+    cur.execute("SELECT login FROM zalog_alice WHERE id = '%s'"%(text))
+    kod = 1
+    for row in cur:
+        kod = 0
+    if kod:
+        cur.execute("INSERT INTO zalog_alice (id,login) VALUES ('%s','%s')"%(text,login))
+        conn.commit()
+        text = "Авторизация Яндекс.Диалога успешно пройдена"
+    else:
+        text = "Данное устройство в Яндекс.Диалогах уже подключено"
+    cur.close()
+    conn.close()
+    return text
+
 # Загрузка логинов всех пользователей
 # Вход: -
 # Выход: Список логинов, существующих в базе

@@ -67,7 +67,7 @@ def get_categs(login, sect):
 # Получение истории расходов/доходов
 # Вход: ДД, ММ, ГГГГ, ДД, ММ, ГГГГ, id пользователя, флаг отправки данных по месяцам, флаг показа всех позиций, логин, флаг расход/доход, счет, категория
 # Выход: Строка отчета, флаг составлена ли диаграмма
-def get_fin_his(sday, smon, syear, fday, fmon, fyear, mid, kod_mon, show, login, sect, spend, categ):
+def get_fin_his(sday, smon, syear, fday, fmon, fyear, kod_mon, show, login, sect, spend, categ):
     if sect == 'spend':
         stroka = "Ваши расходы с " + str(sday) + "." + str(smon) + "." + str(syear) + ' по ' + str(fday) + "." + str(fmon) + "." + str(fyear) + "\n"
         title = "Расходы с " + str(sday) + "." + str(smon) + "." + str(syear) + ' по ' + str(fday) + "." + str(fmon) + "." + str(fyear)
