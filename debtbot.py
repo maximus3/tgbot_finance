@@ -1,4 +1,4 @@
- # -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 import telebot
 import sqlite3
 from telebot import types
@@ -8,6 +8,11 @@ import os
 from config import *
 from func import *
 from chatbase import Message
+from diag import *
+import operator
+#import matplotlib as mpl
+#import matplotlib.pyplot as plt
+
 
 ERROR = 0
 logins = loadlogins() #все существующие в системе логины
@@ -1764,7 +1769,14 @@ def bank_fin_his2(message):
         show = 0
         for i in range(k, -1, -1):
             sday, smon, syear, fday, fmon, fyear = tweek(7 * i)
-            bank_fin_his3(sday, smon, syear, fday, fmon, fyear, mid, kod_mon, show)
+            stroka, diag = bank_fin_his3(sday, smon, syear, fday, fmon, fyear, mid, kod_mon, show)
+            if diag == 1:
+                try:
+                    diag = open(user_res(kods[mid]) + 'diag.png','rb')
+                    bot.send_photo(mid, diag)
+                except Exception as e:
+                    bot.send_message(admin_id, str(e))
+            bot.send_message(mid, stroka, reply_markup = MUP[users[mid]])
         return
 
     else:
@@ -1816,16 +1828,26 @@ def bank_fin_his2(message):
         bot.send_message(mid, "Неверный формат ввода", reply_markup = MUP[users[mid]])
         vr.pop(mid)
         return
-    bank_fin_his3(sday, smon, syear, fday, fmon, fyear, mid, kod_mon, show)
+    stroka, diag = bank_fin_his3(sday, smon, syear, fday, fmon, fyear, mid, kod_mon, show)
+    if diag == 1:
+        try:
+            diag = open(user_res(kods[mid]) + 'diag.png','rb')
+            bot.send_photo(mid, diag)
+        except Exception as e:
+            bot.send_message(admin_id, str(e)) 
+    bot.send_message(mid, stroka, reply_markup = MUP[users[mid]])
 
 # История 3/3
 def bank_fin_his3(sday, smon, syear, fday, fmon, fyear, mid, kod_mon, show):
     if catg[kods[mid]] == 'spend':
         stroka = "Ваши расходы с " + str(sday) + "." + str(smon) + "." + str(syear) + ' по ' + str(fday) + "." + str(fmon) + "." + str(fyear) + "\n"
+        title = "Расходы с " + str(sday) + "." + str(smon) + "." + str(syear) + ' по ' + str(fday) + "." + str(fmon) + "." + str(fyear)
     elif catg[kods[mid]] == 'fin':
         stroka = "Ваши доходы с " + str(sday) + "." + str(smon) + "." + str(syear) + ' по ' + str(fday) + "." + str(fmon) + "." + str(fyear) + "\n"
+        title = "Доходы с " + str(sday) + "." + str(smon) + "." + str(syear) + ' по ' + str(fday) + "." + str(fmon) + "." + str(fyear)
     if spend[mid] != 'все':
         stroka += "Счет: " + spend[mid] + "\n"
+        title += "\nСчет: " + spend[mid]
     if vr[mid] != 'все':
         stroka += "Категория: " + vr[mid] + "\n"
     stroka += "\n"
@@ -1915,6 +1937,11 @@ def bank_fin_his3(sday, smon, syear, fday, fmon, fyear, mid, kod_mon, show):
 
     cur.close()
     conn.close()
+
+    if kol1 == 0:
+        stroka =  "В период с " + str(sday) + "." + str(smon) + "." + str(syear) + ' по ' + str(fday) + "." + str(fmon) + "." + str(fyear) + " по данным категориям и счету ничего нет"
+        return stroka, 0
+    
     if kod_mon == 1:
         if vr[mid] == 'все':
             for i in sorted(mon_s):
@@ -1930,20 +1957,36 @@ def bank_fin_his3(sday, smon, syear, fday, fmon, fyear, mid, kod_mon, show):
                 stroka += 'Месяц: ' + i + '\n'
                 stroka += 'Сумма: ' + str(round(mon_s[i],2)) + '\n'
                 stroka += '\n'
+    diag = 0
     if vr[mid] == 'все':
+        diag = 1
+        data_names = []
+        data_values = []
+        cat_s = list(cat_s.items())
+        for i in range(len(cat_s)):
+            cat_s[i] = list(cat_s[i])
+            cat_s[i][0], cat_s[i][1] = cat_s[i][1], cat_s[i][0]
+        cat_s.sort()
+        cat_s.reverse()
         stroka += 'Всего по категориям:\n'
-        for i in sorted(cat_s):
-            stroka += i + ': ' + str(round(cat_s[i],2)) + '\n'
-    #vr.pop(mid)
+        for elem in cat_s:
+            data_names.append(elem[1])
+            data_values.append(round(elem[0],2))
+            stroka += elem[1] + ': ' + str(round(elem[0],2)) + '\n'
+        try:
+            make_diag(kods[mid], title, data_names, data_values)
+        except Exception as e:
+            diag = -1
+            bot.send_message(admin_id, str(e)) 
+            #make_diag(kods[mid], title, data_names, data_values)
+    #vr.pop(mid)        
     stroka += 'Итого: ' + str(round(osum,2))
-    if kol1 == 0:
-        stroka = "За выбранный период по данным категориям и счету ничего нет"
     while len(stroka) >= 4000:
             bot.send_message(mid, stroka[:4000], reply_markup = MUP[users[mid]])
             stroka = stroka[4000:]
             #stroka = "Слишком много элементов\n"
-    bot.send_message(mid, stroka, reply_markup = MUP[users[mid]])
-    return
+    #bot.send_message(mid, stroka, reply_markup = MUP[users[mid]])
+    return stroka, diag
 
 # Добавление 1/3
 def bank_fin_add1(message):

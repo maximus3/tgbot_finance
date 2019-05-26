@@ -4,6 +4,8 @@ from config import month, mdays, days
 from config import db as data_base
 
 # Загрузка логинов всех пользователей
+# Вход: -
+# Выход: Список логинов, существующих в базе
 def loadlogins():
     conn = sqlite3.connect(data_base)
     cur = conn.cursor()
@@ -15,7 +17,9 @@ def loadlogins():
     conn.close()
     return logins
 
-# Загрузка логинов уже залогинившихся пользоваьелей
+# Загрузка логинов уже залогинившихся пользователей
+# Вход: -
+# Выход: Два словаря
 def loadkods():
     conn = sqlite3.connect(data_base)
     cur = conn.cursor()
@@ -30,6 +34,8 @@ def loadkods():
     return kods, users
 
 # Удаление пользователя из списка залогинившихся
+# Вход: -
+# Выход: 
 def del_kod(kod):
     conn = sqlite3.connect(data_base)
     cur = conn.cursor()
@@ -39,6 +45,8 @@ def del_kod(kod):
     conn.close()
 
 # Проверка вещественного числа (два знака после запятой)
+# Вход: Строка
+# Выход: 'NO' если это не число с двумя знаками после запятой, иначе само число
 def check_num(a):
     a = a.replace(',','.')
     try:
@@ -53,6 +61,8 @@ def check_num(a):
     return k
 
 # Рандомное число
+# Вход: -
+# Выход: Рандомное число
 def nums():
     a = time.asctime()
     a = a.split()
@@ -62,6 +72,8 @@ def nums():
     return a
 
 # Дата сегодня в виде массива день-месяц-год
+# Вход: -
+# Выход: Список с элементами - ДД, ММ, ГГГГ (сегодня)
 def tday():
     a = time.asctime()
     a = a.split()
@@ -69,6 +81,8 @@ def tday():
     return b
 
 # Дата сегодня в виде строки
+# Вход: -
+# Выход: Строка вида 'ДД.ММ.ГГГГ' (сегодня)
 def stday():
     a = str(tday())
     a = a.replace('[','')
@@ -77,6 +91,8 @@ def stday():
     return a
 
 # Дата вчера в виде массива ДД ММ ГГГГ
+# Вход: (не обязательно) список вида time.asctime.split()
+# Выход: список вида ДД, ММ, ГГГГ (вчера)
 def lday(a = time.asctime().split()):
     b = [int(a[2]),month[a[1]],int(a[4])]
     v = 0
@@ -98,6 +114,8 @@ def lday(a = time.asctime().split()):
     return b
 
 # Прошлый месяц
+# Вход: -
+# Выход: Список вида ММ, ГГГГ (предыдущий месяц)
 def lmon():
     a = time.asctime()
     a = a.split()
@@ -109,6 +127,8 @@ def lmon():
     return b
 
 # Прибавить k дней
+# Вход: Число k; (не обязательно) список вида time.asctime.split()
+# Выход: список вида ДД, ММ, ГГГГ (+k дней от даты a)
 def day_plus(k, a = time.asctime().split()):
     b = [int(a[2]),month[a[1]],int(a[4])]
     v = 0
@@ -131,6 +151,8 @@ def day_plus(k, a = time.asctime().split()):
     return b
 
 # Отнять k дней
+# Вход: Число k; (не обязательно) список вида time.asctime.split()
+# Выход: список вида ДД, ММ, ГГГГ (-k дней от даты a)
 def day_min(k, a = time.asctime().split()):
     b = [int(a[2]),month[a[1]],int(a[4])]
     v = 0
@@ -153,6 +175,8 @@ def day_min(k, a = time.asctime().split()):
     return b
 
 # Неделя от текущий даты - k в формате ДД ММ ГГГГ ДД ММ ГГГГ
+# Вход: (не обязательно) число, на которое надо уменьшить текущую дату
+# Выход: список вида ДД, ММ, ГГГГ, ДД, ММ, ГГГГ (неделя от и до)
 def tweek(k = 0):
     a = time.asctime()
     a = a.split()
@@ -169,6 +193,8 @@ def tweek(k = 0):
     return day_min(a[0] - 1, a) + day_plus(7 - a[0], a)
 
 # Предыдущий шаг
+# Вход: текущий шаг (main_..._X_Y)
+# Выход: предыдущий шаг (main_..._X)
 def prev_step(text):
     text = text.split('_')
     text.pop()
@@ -176,10 +202,20 @@ def prev_step(text):
     return text
 
 # База данных для определенного пользователя
+# Вход: логин пользователя
+# Выход: адрес базы данных данного пользователя
 def user_db(login):
     return '/root/debt/users/' + login + '/data.db'
 
+# Папка ресурсов определенного пользователя
+# Вход: логин пользователя
+# Выход: адрес адрес папки ресурсов данного пользователя
+def user_res(login):
+    return '/root/debt/users/' + login + '/'
+
 # Проверка текста, True если есть ошибка
+# Вход: строка; ключ для проверки
+# Выход: True если есть строка не соответствует нужному формату, False иначе
 def check_text(text, tp):
     if tp == 'rus':
         for i in text:
@@ -203,6 +239,8 @@ def check_text(text, tp):
         return False
 
 # Проверка фразы на существование в базе
+# Вход: строка (искомая фраза)
+# Выход: True если данная фраза есть в базе, False иначе
 def phrase_in(text):
     conn = sqlite3.connect(data_base)
     cur = conn.cursor()
