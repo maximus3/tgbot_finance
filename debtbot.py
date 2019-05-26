@@ -5,117 +5,9 @@ from telebot import types
 import time
 import cherrypy
 import os
+from config import *
 
-TOKEN = 'TGBOT_TOKEN_HERE'
-
-__version__ = '0.4.4.0 Beta'
-
-"""
-2.0.0:
-Команды теперь не через слеш и на русском!
-Усовершенствованы системы хранения и обраотки данных
-2.0.1:
-Вместо CANCEL теперь ОТМЕНА (полный перевод)
-Команды можно писать и большими и маленькими буквами
-2.0.2:
-Ввод логина и пароля при регистрации и авторизации теперь возможен и через два разных сообщения!
-2.0.3:
-Пароль должен состоять только из символов A..Z, a..z или цифр
-
-2.1.0:
-Бот будет работать без перебоев (я надеюсь)
-2.1.1:
-Теперь нельзя заходить по одному логину с разных аккаунтов одновременно
-2.1.2:
-Оптимизация кода
-
-2.2.0:
-Добавлены группы. Теперь вы можете создать свою группу должников и каждый раз не писать их отдельно, а добавлять долг сразу всем.
-
-3.0.0:
-Теперь этот бот будет и вашей бухгалтерией. Для начала немного перенесем раздел долги
-3.0.1:
-Исправлено:
-Удаление групп
-Добавлено:
-Возможность создавать счета
-3.0.2:
-Возможность удалять счета
-
-4.0.1:
-Появились расходы:
-смена счета, с которым работаешь
-добавлены категории
-добалена возможность просмотра истории операций
-4.0.2:
-Оптимизирована работа со временем в истории расходов
-4.0.3:
-Добавлена возможность добавлять расходы
-4.0.4:
-Теперь возможно добавлять расходы за любую дату
-4.0.5:
-Теперь можно удалять расходы и доходы из истории
-4.0.6:
-В долгах добавлены даты
-Добавлена общая сумма расходов/доходов за период
-Добавлены переводы
-4.0.7:
-Теперь расходы связанны со счетами
-
-4.1.0:
-WebHook!!!
-(Теперь бот не должен постоянно падать)
-4.1.1:
-Мелкие орфографические исправления
-
-4.2.0:
-Теперь расходы могут быть и не целыми!!!
-4.2.1:
-Теперь отображается ваша потенциальная сумма денег (с учетом долгов)
-4.2.2:
-Добавлены расходы и доходы по категориям при показе общих расходов
-
-4.3.0:
-При добавлении нового счета можно указать стартовый баланс
-Добавлена возможность редактирования расходов и доходов, а также возможность перенести перенести расходы и доходы из одной категории в другую
-Мелкие исправления
-"""
-
-__chng__ = """
-4.4.0:
-Достаточно крупное обновление (с програмной стороны)
-Усовершенствована система хранения и обрботки данных (скоро появится резервное копирование данных для большей безопасности)
-Увеличение скорости доступа к файлам
-"""
-
-"""
-- Возможно поменять имя категории
-"""
-
-__desc__ = """
-Данный бот был создан для того, чтобы вы могли вести учет своих расходов и доходов
-"""
-
-WEBHOOK_HOST = 'HOST_HERE'
-WEBHOOK_PORT = 443  # 443, 80, 88 или 8443 (порт должен быть открыт!)
-WEBHOOK_LISTEN = '0.0.0.0'  # На некоторых серверах придется указывать такой же IP, что и выше
-
-WEBHOOK_SSL_CERT = '/root/debt/webhook_cert.pem'  # Путь к сертификату
-WEBHOOK_SSL_PRIV = '/root/debt/webhook_pkey.pem'  # Путь к приватному ключу
-
-WEBHOOK_URL_BASE = "https://%s:%s" % (WEBHOOK_HOST, WEBHOOK_PORT)
-WEBHOOK_URL_PATH = "/%s/" % (TOKEN)
-
-
-db = '/root/debt/my.db'
-aid = 0 # ADMIN_TGID_HERE
-code = 'пассажиры'
 ERROR = 0
-ERRORS_DESC = """
-0 - все в порядке
-1 - остановлено пользователем
-"""
-
 logins = [] #все существующие в системе логины
 users = dict() #шаги пользователей
 kods = dict() #id + логины залогинившихся пользователей
@@ -126,60 +18,6 @@ vr3 = dict()
 vr4 = dict()
 spend = dict() #счет в расходах и доходах
 tme = dict() #время для записи расходов
-month = {'Jan':1,'Feb':2,'Mar':3,'Apr':4,'May':5,'Jun':6,'Jul':7,'Aug':8,'Sep':9,'Oct':10,'Nov':11,'Dec':12}
-mdays = {1:31,2:28,3:31,4:30,5:31,6:30,7:31,8:31,9:30,10:31,11:30,12:31}
-
-markup = types.ReplyKeyboardMarkup()
-markup.row('Вход', 'Выход')
-markup.row('Мой кошелек','Мои долги')
-markup.row('Регистрация')
-markup.row('Смена пароля', 'О боте')
-
-markupDebt = types.ReplyKeyboardMarkup()
-markupDebt.row('Мои долги','Мои группы')
-markupDebt.row('Добавить долг')
-markupDebt.row('Редактировать')
-markupDebt.row('Назад')
-
-markupBank = types.ReplyKeyboardMarkup()
-markupBank.row('Мои счета','Перевод')
-markupBank.row('Расходы','Доходы')
-markupBank.row('Новый счет','Удалить счет')
-markupBank.row('Назад')
-
-markupSpend = types.ReplyKeyboardMarkup()
-markupSpend.row('Расходы за период')
-markupSpend.row('Новый расход','Редактировать расход')
-markupSpend.row('Поменять счет','Категории')
-markupSpend.row('Назад')
-
-markupFin = types.ReplyKeyboardMarkup()
-markupFin.row('Доходы за период')
-markupFin.row('Новый доход','Редактировать доход')
-markupFin.row('Поменять счет','Категории')
-markupFin.row('Назад')
-
-markupCat = types.ReplyKeyboardMarkup()
-markupCat.row('Добавить','Удалить')
-markupCat.row('Категории')
-markupCat.row('Назад')
-
-markupSZ = types.ReplyKeyboardMarkup()
-markupSZ.row('ОТМЕНА')
-markupSZ.row('Сегодня')
-markupSZ.row('Вчера')
-markupSZ.row('Этот месяц')
-markupSZ.row('Прошлый месяц')
-
-markupCanc = types.ReplyKeyboardMarkup()
-markupCanc.row('ОТМЕНА')
-
-markupG = types.ReplyKeyboardMarkup()
-markupG.row('Меню')
-markupG.row('Удалить группу')
-markupG.row('Добавить долг')
-
-MUP = {'main':markup,'main_debt':markupDebt,'main_bank':markupBank,'main_bank_fin_cat':markupCat,'main_bank_spend_cat':markupCat,'main_bank_spend':markupSpend,'main_debt_group':markupG,'main_bank_fin_his':markupSZ,'main_bank_spend_his':markupSZ,'main_bank_fin':markupFin}
 
 bot = telebot.TeleBot(TOKEN)
 
@@ -221,6 +59,7 @@ def loadkods():#загрузка логинов уже залогинивших�
     cur.execute('SELECT * FROM zalog')
     for row in cur:
         kods[row[0]] = row[1]
+        users[row[0]] = 'main'
     cur.close()
     conn.close()
 
@@ -300,10 +139,16 @@ def user_db(dat):#база данных для определенного пол
 loadlogins()
 loadkods()
 
+# Подключение к Алисе от Яндекса
+@bot.message_handler(commands=['alice'])
+def alice1(message):
+    mid = message.chat.id
+    bot.send_message(mid, 'В разработке')
+
 @bot.message_handler(commands=['errors'])
 def errors1(message):
     mid = message.chat.id
-    users[mid] = 'main_errors'
+    users[mid] += '_errors'
     sent = bot.send_message(mid, 'Введите кодовое слово:')
     bot.register_next_step_handler(sent, errors2)
 
@@ -315,14 +160,9 @@ def errors2(message):
         markup1 = types.ReplyKeyboardMarkup()
         markup1.row('ДА')
         markup1.row('НЕТ')
-        try:
-            FILE = open ("nohup.out","r")
-            LOGS = FILE.read()
-            FILE.close()
-        except Exception:
-            LOGS = ''
-        sent = bot.send_message(mid, 'ERROR: ' + str(ERROR) + '\n\nLOGS:\n' + LOGS + '\n\nЗапустить бота?', reply_markup = markup1)
-        users[mid] = 'main_errors'
+        LOGS = ''
+        sent = bot.send_message(mid, 'ERROR: ' + str(ERROR) + '\n\nЗапустить бота?', reply_markup = markup1)
+        users[mid] += '_errors'
         bot.register_next_step_handler(sent, errors3)
     elif text == code and ERROR == 0:
         bot.send_message(mid, users[mid])
@@ -330,7 +170,7 @@ def errors2(message):
         markup1.row('ДА')
         markup1.row('НЕТ')
         sent = bot.send_message(mid, 'Остановить бота?', reply_markup = markup1)
-        users[mid] = 'main_errors'
+        users[mid] += '_errors'
         bot.register_next_step_handler(sent, errors4)
     else:
         bot.send_message(mid, 'Кодовое слово не верно')
@@ -362,14 +202,12 @@ def errors4(message):
 @bot.message_handler(commands=['start'])
 def start(message):
     mid = message.chat.id
-    if (users.get(mid) == None) or (users.get(mid) == 'main'):
-        users[mid] = 'main'
-        bot.send_message(mid , __desc__ + '\nВерсия бота: ' + str(__version__) + '\n\nСписок изменений:' + __chng__, reply_markup = MUP[users[mid]])
-    else:
-        if users[mid] in MUP:
-            bot.send_message(mid , __desc__ + '\nВерсия бота: ' + str(__version__) + '\n\nСписок изменений:' + __chng__, reply_markup = MUP[users[mid]])
-        else:
-            bot.send_message(mid , __desc__ + '\nВерсия бота: ' + str(__version__) + '\n\nСписок изменений:' + __chng__)
+    if (users.get(mid) == None):
+        users[mid] = 'mainUS'
+    try:
+        bot.send_message(mid , desc + '\nВерсия бота: ' + str(version) + '\n\nСписок изменений:' + chng, reply_markup = MUP[users[mid]])
+    except Exception:
+        bot.send_message(mid , desc + '\nВерсия бота: ' + str(version) + '\n\nСписок изменений:' + chng)
 
 @bot.message_handler(content_types=['text'])
 def main(message):
@@ -379,59 +217,48 @@ def main(message):
     if ERROR != 0:
         bot.send_message(mid, 'Проводятся технические работы')
         return
-    if users.get(mid) == None:
-        users[mid] = 'main'
-    #print("<<" + str(users[mid]) + ">>")
-    if users[mid] == 'main':
-        users[mid] = 'main'
+    if (users.get(mid) == None) or (users[mid] == 'mainUS'):
+        users[mid] = 'mainUS'
+        
         if text == 'РЕГИСТРАЦИЯ':
-            if kods.get(mid) == None:
-                sent = bot.send_message(mid, 'Пожалуйста, введите новый логин и пароль через пробел или в два разных сообщения:')
-                users[mid] = 'main_reg'
-                bot.register_next_step_handler(sent, reg1)
-            else:
-                bot.send_message(mid, 'Вы уже авторизированны')
-                
+            sent = bot.send_message(mid, 'Пожалуйста, введите новый логин и пароль через пробел или в два разных сообщения:')
+            users[mid] = 'mainUS_reg'
+            bot.register_next_step_handler(sent, reg1)
+
         elif text == 'ВХОД':
-            if kods.get(mid) == None:
-                sent = bot.send_message(mid, 'Пожалуйста, введите свой логин и пароль через пробел или в два разных сообщения:')
-                users[mid] = 'main_login'
-                bot.register_next_step_handler(sent, login1)
-            else:
-                bot.send_message(mid, 'Вы уже авторизированны')
-                
-        elif text == 'ВЫХОД':
-            if kods.get(mid) == None:
-                bot.send_message(mid, 'Сначала вам нужно авторизоваться')
-            else:
-                kods.pop(mid)
-                del_kod(mid)
-                bot.send_message(mid, 'Выход выполнен')
+            sent = bot.send_message(mid, 'Пожалуйста, введите свой логин и пароль через пробел или в два разных сообщения:')
+            users[mid] = 'mainUS_login'
+            bot.register_next_step_handler(sent, login1)
+
+        elif text == 'О БОТЕ':
+            start(message)
+        
+    elif users[mid] == 'main':
+
+        if kods.get(mid) == None:
+            bot.send_message(aid, 'ERROR')
+        
+        if text == 'ВЫХОД':
+            kods.pop(mid)
+            del_kod(mid)
+            users[mid] = 'mainUS'
+            bot.send_message(mid, 'Выход выполнен', reply_markup = MUP[users[mid]])
                 
         elif text == 'О БОТЕ':
             start(message)
 
         elif text == 'СМЕНА ПАРОЛЯ':
-            if kods.get(mid) == None:
-                bot.send_message(mid, 'Сначала вам нужно авторизоваться')
-            else:
-                sent = bot.send_message(mid, 'Введите старый пароль')
-                users[mid] = 'main_changepass' 
-                bot.register_next_step_handler(sent, chngpass1)
+            sent = bot.send_message(mid, 'Введите старый пароль')
+            users[mid] = 'main_changepass' 
+            bot.register_next_step_handler(sent, chngpass1)
 
         elif text == 'МОИ ДОЛГИ':
-            if kods.get(mid) == None:
-                bot.send_message(mid, 'Сначала вам нужно авторизоваться')
-            else:
-                users[mid] = 'main_debt'
-                watch_debts(message)
+            users[mid] = 'main_debt'
+            watch_debts(message)
 
         elif text == 'МОЙ КОШЕЛЕК' or text == 'МОЙ КОШЕЛЁК':
-            if kods.get(mid) == None:
-                bot.send_message(mid, 'Сначала вам нужно авторизоваться')
-            else:
-                users[mid] = 'main_bank'
-                watch_bank(message)
+            users[mid] = 'main_bank'
+            watch_bank(message)
 
     elif users[mid] == 'main_debt':
 
@@ -855,6 +682,7 @@ def otv1s(message):
     FILE.close()
 """
 
+# Обработка регистрации 1/2
 def reg1(message):
     text = message.text
     mid = message.chat.id
@@ -877,7 +705,7 @@ def reg1(message):
                         return
                 vr[mid] = log
                 sent = bot.send_message(mid, 'Введите пароль')
-                users[mid] = 'main_reg'
+                users[mid] = 'mainUS_reg'
                 bot.register_next_step_handler(sent, reg2)
                 return
             else:
@@ -921,7 +749,8 @@ def reg1(message):
         bot.send_message(mid, 'Регистрация успешно пройдена!')
     else:
         bot.send_message(mid, 'Пользователь с таким именем уже существует')
-
+        
+# Обработка регистрации 2/2
 def reg2(message):
     text = message.text
     mid = message.chat.id
@@ -954,8 +783,9 @@ def reg2(message):
     conn.close()
     
     logins.append(log)
-    bot.send_message(mid, 'Регистрация успешно пройдена!')
+    bot.send_message(mid, 'Регистрация успешно пройдена! Рекомендуем вам удалить сообщение с паролем.')
 
+# Вход в аккаунт 1/2
 def login1(message):
     text = message.text
     mid = message.chat.id
@@ -975,7 +805,7 @@ def login1(message):
                     return
                 vr[mid] = log
                 sent = bot.send_message(mid, 'Введите пароль')
-                users[mid] = 'main_login'
+                users[mid] = 'mainUS_login'
                 bot.register_next_step_handler(sent, login2)
                 return
             else:
@@ -995,7 +825,8 @@ def login1(message):
                     kods[mid] = log
                     cur.execute("INSERT INTO zalog (id,login) VALUES ('%d','%s')"%(mid,kods[mid]))
                     conn.commit()
-                    bot.send_message(mid, 'Авторизация пройдена!', reply_markup = MUP[users[mid]])
+                    users[mid] = 'main'
+                    bot.send_message(mid, 'Авторизация пройдена! Рекомендуем вам удалить сообщение с паролем.', reply_markup = MUP[users[mid]])
                 else:
                     bot.send_message(mid, 'Пара логин/пароль не верна')
                 cur.close()
@@ -1006,6 +837,7 @@ def login1(message):
     else:
         bot.send_message(mid, 'Такого логина не существует')
 
+# Вход в аккаунт 2/2
 def login2(message):
     text = message.text
     mid = message.chat.id
@@ -1021,7 +853,8 @@ def login2(message):
                 kods[mid] = log
                 cur.execute("INSERT INTO zalog (id,login) VALUES ('%d','%s')"%(mid,log))
                 conn.commit()
-                bot.send_message(mid, 'Авторизация пройдена!', reply_markup = MUP[users[mid]])
+                users[mid] = 'main'
+                bot.send_message(mid, 'Авторизация пройдена! Рекомендуем вам удалить сообщение с паролем.', reply_markup = MUP[users[mid]])
             else:
                 bot.send_message(mid, 'Пара логин/пароль не верна')
             cur.close()
@@ -1030,6 +863,7 @@ def login2(message):
     cur.close()
     conn.close()
 
+# Смена пароля 1/2
 def chngpass1(message):
     text = message.text
     mid = message.chat.id
@@ -1048,6 +882,7 @@ def chngpass1(message):
             conn.close()
             return
 
+# Смена пароля 2/2
 def chngpass2(message):
     text = message.text
     users[mid] = prev_step(users[mid])
@@ -1059,7 +894,8 @@ def chngpass2(message):
     conn.close()
     bot.send_message(mid, 'Пароль успешно изменен на ' + text)
 
-def addcredit1(message):#добавление долгов
+# Добавление долга 1/2
+def addcredit1(message):
     mid = message.chat.id
     text = message.text
     users[mid] = prev_step(users[mid])
@@ -1074,8 +910,7 @@ def addcredit1(message):#добавление долгов
     users[mid] = 'main_debt_add'
     bot.register_next_step_handler(sent, addcredit2)
     
-    
-
+# Добавление долга 2/2
 def addcredit2(message):
     mid = message.chat.id
     text = message.text
@@ -1117,7 +952,8 @@ def addcredit2(message):
     else:
         bot.send_message(mid, 'Отмена выполнена', reply_markup = MUP[users[mid]])
 
-def edit1(message):#редактирование долгов
+# Редактирование долгов 1/3
+def edit1(message):
     text = message.text
     mid = message.chat.id
     users[mid] = prev_step(users[mid])
@@ -1145,7 +981,7 @@ def edit1(message):#редактирование долгов
     users[mid] = 'main_debt_edit'
     bot.register_next_step_handler(sent, edit2)
     
-
+# Редактирование долгов 2/3
 def edit2(message):
     text = message.text
     mid = message.chat.id
@@ -1170,6 +1006,7 @@ def edit2(message):
     users[mid] = 'main_debt_edit'
     bot.register_next_step_handler(sent, edit3)
 
+# Редактирование долгов 3/3
 def edit3(message):
     text = message.text
     mid = message.chat.id
@@ -1231,6 +1068,7 @@ def edit3(message):
     else:
         bot.send_message(mid, 'Отмена выполнена', reply_markup = MUP[users[mid]])
 
+# Группы 1/6
 def group1(message):
     text = message.text
     mid = message.chat.id
@@ -1264,6 +1102,7 @@ def group1(message):
     else:
       bot.send_message(mid, 'Выберите действие:', reply_markup = MUP[users[mid]])
 
+# Группы 2/6
 def group2(message):
     text = message.text
     mid = message.chat.id
@@ -1290,6 +1129,7 @@ def group2(message):
     else:
         bot.send_message(mid, 'Отмена выполнена', reply_markup = MUP[users[mid]])
 
+# Группы 3/6
 def group3(message):
     text = message.text
     mid = message.chat.id
@@ -1316,6 +1156,7 @@ def group3(message):
     else:
         bot.send_message(mid, 'Отмена выполнена', reply_markup = MUP[users[mid]])
 
+# Группы 4/6
 def group4(message):
     text = message.text
     mid = message.chat.id
@@ -1339,6 +1180,7 @@ def group4(message):
     else:
         bot.send_message(mid, 'Я вас не понимаю. Вот меню:', reply_markup = MUP[users[mid]])
 
+# Группы 5/6
 def group5(message):
     text = message.text
     mid = message.chat.id
@@ -1393,6 +1235,7 @@ def group5(message):
         users[mid] = 'main_debt'
         bot.send_message(mid, 'Отмена выполнена', reply_markup = MUP[users[mid]])
 
+# Группы 6/6
 def group6(message):
     text = message.text
     mid = message.chat.id
@@ -1432,7 +1275,8 @@ def group6(message):
         users[mid] = 'main_debt_group'
         bot.send_message(mid, 'Отмена выполнена', reply_markup = MUP[users[mid]])
 
-def watch_debts(message):#просмотр должников
+# Просмотр должников
+def watch_debts(message):
     mid = message.chat.id
     kol = 0
     osum = 0
@@ -1452,6 +1296,7 @@ def watch_debts(message):#просмотр должников
     cur.close()
     conn.close()
 
+# Просмотр счетов
 def watch_bank(message):
     mid = message.chat.id
     kol = 0
@@ -1479,11 +1324,13 @@ def watch_bank(message):
         stroka = 'У вас нет счетов'
     bot.send_message(mid, stroka, reply_markup = MUP[users[mid]])
 
+# Создание нового счета 1/3
 def new_bank(mid):
     sent = bot.send_message(mid, 'Введите название счета (до 32 символов)', reply_markup = markupCanc)
     users[mid] = 'main_bank_add'
     bot.register_next_step_handler(sent, bank_add1)
 
+# Создание нового счета 2/3
 def bank_add1(message):
     mid = message.chat.id
     text = message.text
@@ -1516,6 +1363,7 @@ def bank_add1(message):
     users[mid] = 'main_bank_add'
     bot.register_next_step_handler(sent, bank_add2)
 
+# Создание нового счета 3/3
 def bank_add2(message):
     mid = message.chat.id
     text = message.text
@@ -1539,6 +1387,7 @@ def bank_add2(message):
     conn.close()
     bot.send_message(mid, 'Счет добавлен', reply_markup = MUP[users[mid]])
 
+# Удаление счета
 def bank_del(message):
     mid = message.chat.id
     text = message.text
@@ -1557,6 +1406,9 @@ def bank_del(message):
     if kod == 1:
         bot.send_message(mid, 'Данного счета не существует', reply_markup = MUP[users[mid]])
         return
+    if text.upper() == spend[mid].upper():
+        bot.send_message(mid, 'Сначала выберите другой счет', reply_markup = MUP[users[mid]])
+        return
     vr[mid] = text
     keybGR = types.InlineKeyboardMarkup()
     cbtn1 = types.InlineKeyboardButton(text="Да", callback_data="bank_del_yes")
@@ -1565,17 +1417,19 @@ def bank_del(message):
     bot.send_message(mid, 'Вы уверены, что хотите удалить счет? Его баланс будет удален!', reply_markup = keybGR)
     users[mid] = 'main_bank_del'
 
+# Расходы главная
 def bank_spend(mid):
     users[mid] = 'main_bank_spend'
     if spend.get(mid) == None:
         spend[mid] = 'ВСЕ'
     bot.send_message(mid, "Выберите действие. Текущий счет: " + spend[mid], reply_markup = MUP[users[mid]])
 
+# Смена счета
 def bank_change(message):
     mid = message.chat.id
     text = message.text
     users[mid] = prev_step(users[mid])
-    if text == 'ВСЕ':
+    if text ==' ВСЕ':
         spend[mid] = 'ВСЕ'
         bot.send_message(mid, "Выбраны все счета", reply_markup = MUP[users[mid]])
     elif text.upper() not in vr[mid]:
@@ -1585,6 +1439,7 @@ def bank_change(message):
         bot.send_message(mid, "Выбран счет: " + spend[mid], reply_markup = MUP[users[mid]])
     vr.pop(mid)
 
+# Просмотр категорий
 def watch_cat(mid):
     kol = 0
     stroka = ""
@@ -1600,7 +1455,6 @@ def watch_cat(mid):
     if kol == 0:
         stroka = 'У вас нет категорий'
     bot.send_message(mid, stroka, reply_markup = MUP[users[mid]])
-
 
 def bank_spend_cat_add(message):
     mid = message.chat.id
@@ -1812,8 +1666,8 @@ def bank_spend_his2(message):
                 mon = 1
                 year += 1
         if len(stroka) >= 4000:
-            stroka = "Слишком много элементов"
-            kod = 1
+            stroka = "Слишком много элементов\n"
+            kod = 1 # Не надо завершать, он не закончил общий подсчет
     cur.close()
     conn.close()
     if vr[mid] == 'ВСЕ':
