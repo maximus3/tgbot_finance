@@ -1,7 +1,7 @@
-from config import TOKEN, directory
+from config import TOKEN, directory, port
 
 WEBHOOK_HOST = 'HOST_HERE'
-WEBHOOK_PORT = 443  # 443, 80, 88 или 8443 (порт должен быть открыт!)
+WEBHOOK_PORT = port  # 443, 80, 88 или 8443 (порт должен быть открыт!)
 WEBHOOK_LISTEN = '0.0.0.0'  # На некоторых серверах придется указывать такой же IP, что и выше
 
 WEBHOOK_SSL_CERT = directory + 'webhook_cert.pem'  # Путь к сертификату

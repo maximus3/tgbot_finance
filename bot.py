@@ -68,7 +68,7 @@ for elem in admin_ids:
     if elem not in tester_ids:
         tester_ids.append(elem)
 
-# WEBHOOK START
+# WEBHOOK_START
 
 # Наш вебхук-сервер
 class WebhookServer(object):
@@ -86,7 +86,7 @@ class WebhookServer(object):
         else:
             raise cherrypy.HTTPError(403)
 
-# WEBHOOK FINISH
+# WEBHOOK_FINISH
 
 bot = telebot.TeleBot(TOKEN)
 
@@ -128,7 +128,7 @@ def error_check(message):
         except Exception as e:
             logging.error(str(e))
         logging.info('error_check [%s]: Inserting values in last_mes', login)
-        cur.execute("INSERT INTO last_mes (login, time, username, text) VALUES (?, ?, ?, ?)", [(login), (str(time.asctime())), (username), (text)])
+        cur.execute("INSERT INTO last_mes (login,time, username, text) VALUES (?, ?, ?, ?)", [(login), (str(time.asctime())), (username), (text)])
         logging.info('error_check [%s]: Inserted', login)
         conn.commit()
         cur.close()
@@ -2174,7 +2174,7 @@ def watch_bank(message):
     stroka = 'Ваши счета:\n'
 
     for i, elem in enumerate(banks):
-        stroka += str(i + 1) + ') ' + elem[0] + '\nБаланс: ' + str(elem[1]) + '\n\n'
+        stroka += str(i + 1) + ') ' + elem[0] + '\nБаланс: ' + str(round(elem[1], 2)) + '\n\n'
     stroka += 'Сумма: ' + str(round(osum,2))
 
     debts, kol1, sdebt = get_debts(login)
@@ -2574,7 +2574,7 @@ def bank_fin_his2(message):
         fyear = int(tm[2])
         
     elif text == '**вчера**':
-        tm = lday()
+        tm = day_min(1)
         sday = int(tm[0])
         fday = int(tm[0])
         smon = int(tm[1])
@@ -2827,7 +2827,7 @@ def bank_fin_add2(message):
     if text == '**сегодня**':
         tme[mid] = tday()
     elif text == '**вчера**':
-        tme[mid] = lday()
+        tme[mid] = day_min(1)
     else:
         text = text.split()
         try:
@@ -3047,7 +3047,7 @@ def bank_fin_edit2(message):
     if text == '**сегодня**':
         tme[mid] = tday()
     elif text == '**вчера**':
-        tme[mid] = lday()
+        tme[mid] = day_min(1)
     else:
         text = text.split()
         try:
@@ -3969,7 +3969,7 @@ def callback_inline(call):
         # Создание нового счета
         if call.data == "bank_add":
             bot.edit_message_text(chat_id = mid, message_id = call.message.message_id, text = "Начинаем создание счета...")
-            users[mid] = 'main_bank'
+            users[mid] = 'main'
             new_bank(mid)
 
         # Смена счета
@@ -4193,7 +4193,7 @@ def callback_inline(call):
                 tester_ids.pop(tester_ids.index(tid))
                 bot.edit_message_text(chat_id = mid, message_id = call.message.message_id, text = 'Удаление выполнено')
             
-#WEBHOOK_START
+# WEBHOOK_START
 
 # Снимаем вебхук перед повторной установкой (избавляет от некоторых проблем)
 bot.remove_webhook()
@@ -4214,4 +4214,4 @@ cherrypy.config.update({
  # Собственно, запуск!
 cherrypy.quickstart(WebhookServer(), WEBHOOK_URL_PATH, {'/': {}})
 
-#WEBHOOK_FINISH
+# WEBHOOK_FINISH

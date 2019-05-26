@@ -140,7 +140,7 @@ def get_limits(login):
     return limits, kol
 
 # Получение истории расходов/доходов
-# Вход: ДД, ММ, ГГГГ, ДД, ММ, ГГГГ, id пользователя, флаг отправки данных по месяцам, флаг показа всех позиций, логин, флаг расход/доход, счет, категория
+# Вход: ДД, ММ, ГГГГ, ДД, ММ, ГГГГ, флаг отправки данных по месяцам, флаг показа всех позиций, логин, флаг расход/доход, счет, категория, флаг показа диаграммы
 # Выход: Строка отчета, флаг составлена ли диаграмма
 def get_fin_his(sday, smon, syear, fday, fmon, fyear, kod_mon, show, login, sect, spend, categ, show_diag):
     if sect == 'spend':
@@ -171,6 +171,7 @@ def get_fin_his(sday, smon, syear, fday, fmon, fyear, kod_mon, show, login, sect
     if categ != 'все':
         stroka += "Категория: " + categ + "\n"
     stroka += "\n"
+    s_old = stroka
     year = syear
     mon = smon
     day = sday
@@ -215,10 +216,10 @@ def get_fin_his(sday, smon, syear, fday, fmon, fyear, kod_mon, show, login, sect
             kol += 1
             kol1 += 1
             if categ == 'все':
+                stroka1 += row[2]
                 if kod_mon == 1:
                     if mon_s.get(str(year) + ' ' + str(mon)) == None:
                         mon_s[str(year) + ' ' + str(mon)] = dict()
-                stroka1 += "Категория: " + row[2] + "\n"
                 if cat_s.get(row[2]) != None:
                     cat_s[row[2]] += round(row[1],2)
                 else:
@@ -236,13 +237,15 @@ def get_fin_his(sday, smon, syear, fday, fmon, fyear, kod_mon, show, login, sect
                     if kod_mon == 1:
                         mon_s[str(year) + ' ' + str(mon)] = round(row[1],2)
             if spend == 'все':
-                stroka1 += "Счет: " + row[3] + "\n"
+                if categ == 'все':
+                    stroka1 += ', '
+                stroka1 += row[3]
             txt = row[0]
             txt = txt.split('%')
             if len(txt[0]) == 0:
-                stroka1 +=  "Сумма: " + str(round(row[1],2)) + "\n\n"
+                stroka1 +=  str(round(row[1],2)) + "р\n\n"
             else:
-                stroka1 +=  "Сумма: " + str(round(row[1],2)) + "\n" + txt[0] + "\n\n"
+                stroka1 +=  txt[0] + ' ' + str(round(row[1],2)) + "р\n\n"
   
         if kol > 0 and kodK == 0 and kod_mon != 1 and show == 1:
             stroka += stroka1 + "\n"
@@ -256,7 +259,7 @@ def get_fin_his(sday, smon, syear, fday, fmon, fyear, kod_mon, show, login, sect
                 mon = 1
                 year += 1
         if len(stroka) >= 4000:
-            stroka = "Слишком много элементов\n"
+            stroka = s_old
             kodK = 1
 
     cur.close()
@@ -289,12 +292,12 @@ def get_fin_his(sday, smon, syear, fday, fmon, fyear, kod_mon, show, login, sect
                 for j in sorted(mon_s[i]):
                     stroka += str(j) + ': ' + str(round(mon_s[i][j],2)) + '\n'
                     osum1 += mon_s[i][j]
-                stroka += 'Итого за месяц: ' + str(round(osum1,2)) + '\n'
+                stroka += 'Итого за месяц: ' + str(round(osum1,2)) + 'р\n'
                 stroka += '\n'
         else:
             for i in sorted(mon_s):
                 stroka += 'Месяц: ' + i + '\n'
-                stroka += 'Сумма: ' + str(round(mon_s[i],2)) + '\n'
+                stroka += 'Сумма: ' + str(round(mon_s[i],2)) + 'р\n'
                 stroka += '\n'
     diag = 0
     if categ == 'все':
@@ -311,7 +314,7 @@ def get_fin_his(sday, smon, syear, fday, fmon, fyear, kod_mon, show, login, sect
         for elem in cat_s:
             data_names.append(elem[1])
             data_values.append(round(elem[0],2))
-            stroka += elem[1] + ': ' + str(round(elem[0],2)) + '\n'
+            stroka += elem[1] + ': ' + str(round(elem[0],2)) + 'р\n'
         try:
             if show_diag:
                 make_diag(login, title, data_names, data_values)

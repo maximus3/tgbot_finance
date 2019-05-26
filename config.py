@@ -1,10 +1,17 @@
 from telebot import types
 
-# Токен для телеграм-бота
+### NORMAL
 TOKEN = 'TGBOT_TOKEN_HERE'
+port = 443
+directory = '/root/debt/'
+
+### TEST
+# TOKEN = 'TGBOT_TEST_TOKEN_HERE'
+# port = 8443
+# directory = '/root/test_bot/'
 
 # Версия телеграм-бота
-version = '0.5.2.0 Beta'
+version = '0.5.2.1 Beta'
 
 """
 0.2.0.0:
@@ -141,16 +148,13 @@ chng = """
 - Новая функция - Шаблоны (используются при добавлении одной командой)
 - Новая функция - лимиты (подробнее /help)
 
-P.S. Возможны баги, поэтому если вы их вдруг обнаружите, то обязательно напишите об этом в @m3prod
+P.S. Возможны баги, поэтому если вы их вдруг обнаружите, то обязательно напишите об этом в 
 """
 
 # Описание телеграм-бота
 desc = """
 Данный бот поможет вам вести учет своих расходов и доходов.
 """
-
-# Адрес папки
-directory = '/root/debt/'
 
 # Адрес общей базы данных
 db = directory + 'my.db'
@@ -159,8 +163,8 @@ db = directory + 'my.db'
 notif_db = directory +'notif.db'
 
 # ID админа телеграм
-admin_id = 0 #ADMIN_TGID_HERE
-admin_ids = [] #ADMINs_TGID_HERE
+admin_id = 0 # ADMIN_TGID_HERE
+admin_ids = [] # ADMINs_TGID_HERE
 tester_ids = []
 # Секретный код
 code = 'пассажиры'

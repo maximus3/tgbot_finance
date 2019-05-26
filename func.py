@@ -311,7 +311,7 @@ def lday(a = time.asctime().split()):
     v = 0
     if b[2]%4 == 0:
         v = 1
-    b [0] -= 1
+    b[0] -= 1
     if b[0] < 1:
         b[1] -= 1
         if b[1] < 1:
